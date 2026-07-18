@@ -12,6 +12,12 @@
       "runtimeExecutable": "cmd",
       "runtimeArgs": ["/c", "set DASHBOARD_PORT=4123&& npx tsx dashboard/server.ts"],
       "port": 4123
+    },
+    {
+      "name": "dashboard-verify",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set DASHBOARD_PORT=4207&& npx tsx dashboard/server.ts"],
+      "port": 4207
     }
   ]
 }

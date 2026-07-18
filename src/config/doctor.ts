@@ -144,6 +144,14 @@ async function probeNvidia(): Promise<{ status: CheckStatus; detail: string; fix
   return { status: "fail", detail: `${base}/models answered HTTP ${res.status}.`, fix: "If you pointed NVIDIA_API_BASE at a self-hosted vLLM, make sure it is running and reachable." };
 }
 
+async function probeFeatherless(): Promise<{ status: CheckStatus; detail: string; fix?: string }> {
+  const base = (process.env.FEATHERLESS_API_BASE ?? "https://api.featherless.ai/v1").replace(/\/$/, "");
+  const res = await fetch(`${base}/models`, { headers: { Authorization: `Bearer ${process.env.FEATHERLESS_API_KEY}` }, signal: t() });
+  if (res.ok) return { status: "pass", detail: "Featherless endpoint answered — worker inference on Featherless-hosted Nemotron is live (it wins auto-detect when no WORKER_BACKEND is set)." };
+  if (res.status === 401 || res.status === 403) return { status: "fail", detail: `The key was rejected (${res.status}).`, fix: "Create a fresh key at https://featherless.ai (hackathon usage tokens apply there) and paste it again in Connections." };
+  return { status: "fail", detail: `${base}/models answered HTTP ${res.status}.`, fix: "If you overrode FEATHERLESS_API_BASE, make sure the endpoint is reachable; otherwise check https://featherless.ai status." };
+}
+
 async function probeHiddenLayer(): Promise<{ status: CheckStatus; detail: string; fix?: string }> {
   // Token exchange is the real test — bad creds fail here. IMPORTANT: with
   // broken HL creds the gate fails CLOSED, i.e. EVERY worker message becomes a
@@ -195,6 +203,7 @@ async function probeResend(): Promise<{ status: CheckStatus; detail: string; fix
 const KEY_CHECKS: KeyCheck[] = [
   { id: "key-anthropic", label: "AI brain — Claude key", envKeys: ["ANTHROPIC_API_KEY"], probe: probeAnthropic },
   { id: "key-nvidia", label: "AI brain — NVIDIA Nemotron key", envKeys: ["NVIDIA_INFERENCE_API_KEY"], probe: probeNvidia },
+  { id: "key-featherless", label: "AI brain — Featherless AI key", envKeys: ["FEATHERLESS_API_KEY"], probe: probeFeatherless },
   { id: "key-hiddenlayer", label: "HiddenLayer security scanning", envKeys: ["HIDDENLAYER_CLIENT_ID", "HIDDENLAYER_CLIENT_SECRET"], probe: probeHiddenLayer },
   { id: "key-apify", label: "Apify live research", envKeys: ["APIFY_TOKEN"], probe: probeApify },
   { id: "key-shopify", label: "Shopify store", envKeys: ["SHOPIFY_ADMIN_TOKEN", "SHOPIFY_STORE_URL"], probe: probeShopify },
