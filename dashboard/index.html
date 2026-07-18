@@ -39,6 +39,15 @@
     .bar { height: 7px; border-radius: 4px; background: #1d2635; margin-top: 0.45rem; overflow: hidden; }
     .bar > div { height: 100%; background: linear-gradient(90deg, #2f7a4b, #5ff59a); transition: width 0.6s ease; }
     .eta { font-size: 0.65rem; color: #8a93a6; margin-top: 0.25rem; }
+    .mode { font-size: 0.58rem; padding: 0.02rem 0.4rem; border-radius: 4px; margin-left: 0.4rem; letter-spacing: 0.05em; }
+    .mode.real { background: #0f2e1c; color: #5ff59a; border: 1px solid #2f7a4b; }
+    .mode.sim { background: #2e2410; color: #d9a441; border: 1px solid #6b5220; }
+    .esc { border: 1px solid #7a2030; background: #22101a; border-radius: 8px; padding: 0.7rem 0.9rem; margin-bottom: 1rem; }
+    .esc h3 { margin: 0 0 0.3rem; font-size: 0.78rem; color: #ff8a9b; letter-spacing: 0.06em; }
+    .esc .cats { font-size: 0.68rem; color: #ffb3bf; }
+    .esc .content { font-size: 0.68rem; color: #9aa5bd; margin: 0.3rem 0; word-break: break-word; }
+    .esc .actions { display: flex; gap: 0.5rem; margin-top: 0.4rem; }
+    .esc button.approve { border-color: #2f7a4b; }
     .log { font-size: 0.62rem; color: #6b7590; max-height: 4.4rem; overflow-y: auto; margin-top: 0.4rem; }
 
     .chat { border: 1px solid #2a3040; border-radius: 8px; background: #0e131c; display: flex; flex-direction: column; height: calc(100vh - 190px); min-height: 420px; position: sticky; top: 1rem; }
@@ -72,8 +81,11 @@
     <h1>AGENT CORP — LIVE</h1>
     <a href="/evals">→ model evals</a>
     <div class="spacer"></div>
+    <button id="attackBtn" class="deny">inject poisoned doc</button>
     <button id="resetBtn" class="deny">reset demo</button>
   </div>
+
+  <div id="escalations"></div>
 
   <div class="goalbar">
     <input id="goalInput" placeholder='Give the CEO a goal… e.g. "make me a shopify store"' />
@@ -100,7 +112,7 @@
   <div class="drawer" id="drawer"></div>
 
   <script>
-    const state = { agents: new Map(), tasks: new Map(), goals: new Map(), messages: [] };
+    const state = { agents: new Map(), tasks: new Map(), goals: new Map(), messages: [], escalations: new Map() };
     let openAgentId = null;
 
     const $ = (id) => document.getElementById(id);
@@ -132,6 +144,23 @@
       }).join("");
     }
 
+    function renderEscalations() {
+      const pending = [...state.escalations.values()].filter(e => !e.resolved);
+      $("escalations").innerHTML = pending.map(e => `
+        <div class="esc">
+          <h3>⚠ SECURITY ESCALATION ${esc(e.id)} — ${esc(e.agentId)} blocked, awaiting your decision</h3>
+          <div class="cats">detections: ${esc((e.scan?.categories || []).join(", "))}</div>
+          <div class="content">${esc(e.reason)} · "${esc((e.content||"").slice(0,220))}"</div>
+          <div class="actions">
+            <button class="approve" onclick="resolveEsc('${esc(e.id)}','approve')">Approve</button>
+            <button class="deny" onclick="resolveEsc('${esc(e.id)}','deny')">Deny</button>
+          </div>
+        </div>`).join("");
+    }
+    async function resolveEsc(id, verb) {
+      await fetch(`/${verb}/${id}`, { method: "POST" });
+    }
+
     function renderGrid() {
       const grid = $("grid");
       grid.innerHTML = "";
@@ -140,8 +169,9 @@
         const card = document.createElement("div");
         card.className = "card" + (a.spec?.role === "ceo" ? " ceo" : "");
         card.onclick = () => openDrawer(a.id);
+        const modeTag = t?.mode ? `<span class="mode ${t.mode}">${t.mode === "sim" ? "SIMULATION" : "REAL"}</span>` : "";
         card.innerHTML = `
-          <div class="role">${esc(a.spec?.role)}</div>
+          <div class="role">${esc(a.spec?.role)}${modeTag}</div>
           <strong>${esc(a.id)}</strong> <span class="status ${esc(a.status)}">${esc(a.status)}</span>
           <div class="email">${esc(a.identity?.email ?? "")}</div>
           <div class="objective">${esc(a.spec?.objective ?? "")}</div>
@@ -226,7 +256,7 @@
       input.value = "";
     }
 
-    function renderAll() { renderGoals(); renderGrid(); renderChat(); renderSelectors(); if (openAgentId) renderDrawer(); }
+    function renderAll() { renderEscalations(); renderGoals(); renderGrid(); renderChat(); renderSelectors(); if (openAgentId) renderDrawer(); }
 
     // --- actions ---
     $("goalBtn").onclick = async () => {
@@ -251,6 +281,7 @@
     $("msgInput").addEventListener("keydown", e => { if (e.key === "Enter") $("msgBtn").click(); });
 
     $("resetBtn").onclick = async () => { await fetch("/reset", { method: "POST" }); };
+    $("attackBtn").onclick = async () => { await fetch("/attack", { method: "POST", headers: {"Content-Type":"application/json"}, body: "{}" }); };
     $("threadFilter").addEventListener("change", renderChat);
 
     // --- SSE ---
@@ -259,6 +290,7 @@
       state.tasks = new Map(s.tasks.map(t => [t.id, t]));
       state.goals = new Map(s.goals.map(g => [g.id, g]));
       state.messages = s.messages;
+      state.escalations = new Map((s.escalations || []).map(e => [e.id, e]));
     }
     const es = new EventSource("/events");
     es.onmessage = (ev) => {
@@ -268,6 +300,7 @@
       else if (type === "task") state.tasks.set(data.id, data);
       else if (type === "goal") state.goals.set(data.id, data);
       else if (type === "message") state.messages.push(data);
+      else if (type === "escalation") state.escalations.set(data.id, data);
       renderAll();
     };
   </script>

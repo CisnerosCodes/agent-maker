@@ -4,6 +4,7 @@
 // Every step emits an AgentEvent so the dashboard shows provisioning live.
 
 import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { AgentRecord, AgentSpec } from "../types.js";
 import { issueIdentity } from "../vault/vault.js";
 import { registry } from "../registry/registry.js";
@@ -48,7 +49,17 @@ export async function createAgent(spec: AgentSpec, parentId: string): Promise<Ag
 }
 
 async function renderPolicy(spec: AgentSpec, agentId: string): Promise<string> {
-  // TODO(Sky): read policies/<template>, substitute agent name + allowed endpoints,
-  // write to a per-agent path NemoClaw can consume.
-  return `policies/rendered/${agentId}.yaml`;
+  // Render the role template into a per-agent policy NemoClaw can consume.
+  // TODO(Sky): verify template fields against the real OpenShell schema.
+  const outPath = `policies/rendered/${agentId}.yaml`;
+  const templatePath = `policies/${spec.policyTemplate}`;
+  const template = existsSync(templatePath)
+    ? readFileSync(templatePath, "utf8")
+    : `# no template ${spec.policyTemplate} — default-deny\nagent: "{{AGENT_ID}}"\nsandbox: "{{SANDBOX_NAME}}"\nnetwork:\n  default: deny\n`;
+  const rendered = template
+    .replaceAll("{{AGENT_ID}}", agentId)
+    .replaceAll("{{SANDBOX_NAME}}", `sandbox-${agentId}`);
+  mkdirSync("policies/rendered", { recursive: true });
+  writeFileSync(outPath, rendered);
+  return outPath;
 }

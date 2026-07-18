@@ -83,6 +83,9 @@ export interface Task {
   dependsOn: string[];       // task ids that must be done first
   startedAt?: string;
   finishedAt?: string;
+  mode?: "real" | "sim";     // real = model/tool-backed; sim = staged (labeled on the dashboard)
+  output?: string;           // human-readable result summary
+  outputData?: unknown;      // structured result handed to dependent tasks
 }
 
 // --- SecurityGate ---

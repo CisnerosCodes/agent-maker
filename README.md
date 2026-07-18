@@ -82,11 +82,25 @@ the agents talking to each other in the company channel. Click any agent card
 for a drill-down: its messages, event log, spec/identity, and a box to message
 it directly. `reset demo` clears everything.
 
-The *work loop* is simulated (timed progress + scripted milestones) so the
-demo runs offline; the pipeline around it — bus, factory, vault, registry,
-SSE — is the real one. See `docs/IMPROVEMENTS.md` for why the message bus (not
-Slack) is the company's spine, and `docs/ORCHESTRATION.md` for the swap-in
-plan for real model-backed workers.
+**What's real vs simulated (honestly labeled on screen):**
+- **Research agent — REAL.** Makes a live HTTP fetch for product data and
+  synthesizes findings (LLM analysis when a model key is present, deterministic
+  otherwise). Card shows a green **REAL** tag.
+- **SecurityGate + escalations — REAL.** Every bus message and worker I/O is
+  scanned (heuristic floor always on; HiddenLayer merges in with a key). Click
+  **"inject poisoned doc"**: the gate flags prompt-injection + data-exfiltration,
+  the research agent goes `blocked`, and an approve/deny banner appears — deny it
+  and the defense-in-depth message notes the OpenShell policy blocks the exfil
+  host independently. This is money-demo #2.
+- **Store-builder — REAL when `SHOPIFY_ADMIN_TOKEN` + `SHOPIFY_STORE_URL` are
+  set** (POSTs 3 products to the Admin API); otherwise labeled **SIMULATION**.
+- **Nemotron inference — REAL with `NVIDIA_INFERENCE_API_KEY` +
+  `WORKER_BACKEND=nvidia`.** `SIM_MODE=1` forces everything to sim as stage
+  insurance.
+
+See `docs/IMPROVEMENTS.md` for why the message bus (not Slack) is the company's
+spine, and `docs/ORCHESTRATION.md` → "Go-live checklist" for flipping each
+worker/layer from sim to real.
 
 ## How the company works
 

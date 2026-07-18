@@ -10,6 +10,8 @@ import type { AgentRecord, AgentSpec, BusMessage, Goal, Task } from "../types.js
 import { bus } from "../bus/bus.js";
 import { registry } from "../registry/registry.js";
 import { createAgent } from "../factory/factory.js";
+import { workerMode, runResearch, runStoreBuilder, runCopywriter, gateOrEscalate, type Product } from "../factory/worker.js";
+import { escalations } from "../security/escalations.js";
 
 const CEO_ID = "ceo-01";
 const TICK_MS = 1200;
@@ -25,6 +27,10 @@ class Orchestrator extends EventEmitter {
   goals = new Map<string, Goal>();
   tasks = new Map<string, Task>();
   private ticker?: NodeJS.Timeout;
+  private niche = new Map<string, string>();          // goalId -> niche
+  private research = new Map<string, Product[]>();     // goalId -> research output
+  private realRunning = new Set<string>();            // task ids executing a real worker
+  private lastResearchId?: string;                    // most recent research agent (attack target)
 
   constructor() {
     super();
@@ -33,6 +39,20 @@ class Orchestrator extends EventEmitter {
 
   snapshot() {
     return { goals: [...this.goals.values()], tasks: [...this.tasks.values()] };
+  }
+
+  // Red-team: feed a poisoned document to the research agent's ingestion gate.
+  // Uses gateOrEscalate so the flow is identical to a real ingested source —
+  // the gate flags it and a real, resolvable escalation is raised.
+  async injectAttack(payload: string): Promise<{ ok: boolean; agentId?: string; allowed?: boolean }> {
+    const agent = registry.get(this.lastResearchId ?? "") ?? registry.all().find((a) => a.spec.role === "research");
+    if (!agent) return { ok: false };
+    const threadId = [...this.tasks.values()].find((t) => t.agentId === agent.id)?.goalId ?? "company";
+    bus.post({ threadId, from: "external-source", to: agent.id, kind: "finding", body: `Ingested document from research source: ${payload}` });
+    const allowed = await gateOrEscalate(agent, payload, "ingested_document", threadId, "Poisoned document from external research source");
+    if (allowed) bus.post({ threadId, from: agent.id, kind: "status", body: "Operator approved the ingested document — proceeding (note: OpenShell egress policy still blocks the exfil host independently)." });
+    else bus.post({ threadId, from: agent.id, kind: "system", body: "Poisoned document quarantined. Defense in depth: even if approved, the OpenShell policy denies the evil.example egress host." });
+    return { ok: true, agentId: agent.id, allowed };
   }
 
   private ensureCeo() {
@@ -154,6 +174,7 @@ class Orchestrator extends EventEmitter {
 
   private async plan(goal: Goal) {
     const roles = this.rolesFor(goal);
+    this.niche.set(goal.id, (goal.text.match(/\bfor\b\s+(.+?)(?:\s*—|$)/i)?.[1] ?? goal.text.split("—").pop() ?? "the target market").trim());
     bus.post({
       threadId: goal.id, from: "ceo", kind: "status",
       body: `Org plan: ${roles.map((r, i) => `${i + 1}) ${r.spec.name} — ${r.title}`).join("  ")}. Hiring now.`,
@@ -162,6 +183,8 @@ class Orchestrator extends EventEmitter {
     const taskIds: string[] = [];
     for (const role of roles) {
       const record = await createAgent(role.spec, CEO_ID);
+      if (role.spec.role === "research") this.lastResearchId = record.id;
+      const mode = workerMode(role.spec.role);
       const task: Task = {
         id: `task-${randomUUID().slice(0, 6)}`,
         goalId: goal.id,
@@ -171,6 +194,7 @@ class Orchestrator extends EventEmitter {
         progress: 0,
         estimateSec: role.estimateSec,
         dependsOn: role.dependsOnIndex.map((i) => taskIds[i]),
+        mode,
       };
       taskIds.push(task.id);
       this.tasks.set(task.id, task);
@@ -201,9 +225,10 @@ class Orchestrator extends EventEmitter {
         if (ready) this.startTask(task);
       } else if (task.status === "running") {
         anyActive = true;
-        this.advance(task);
+        if (task.mode !== "real") this.advance(task); // real tasks drive their own progress
       }
     }
+    if (this.realRunning.size > 0) anyActive = true;
     if (!anyActive && this.ticker) {
       clearInterval(this.ticker);
       this.ticker = undefined;
@@ -217,13 +242,54 @@ class Orchestrator extends EventEmitter {
     const agent = task.agentId ? registry.get(task.agentId) : undefined;
     if (agent) {
       agent.status = "working";
-      registry.upsert(agent, `Task started: ${task.title}`);
+      registry.upsert(agent, `Task started (${task.mode}): ${task.title}`);
       const upstream = task.dependsOn.map((d) => this.tasks.get(d)?.agentId).filter(Boolean);
       const intro = upstream.length
         ? `Picking up ${upstream.join(" & ")}'s output — starting: ${task.title}`
         : `Starting: ${task.title}`;
       bus.post({ threadId: task.goalId, from: agent.id, to: upstream[0], kind: "status", body: intro });
     }
+    if (task.mode === "real" && agent) this.runReal(task, agent);
+  }
+
+  private async runReal(task: Task, agent: AgentRecord) {
+    this.realRunning.add(task.id);
+    const onProgress = (p: number) => { task.progress = Math.max(task.progress, Math.min(99, p)); this.emitTask(task); };
+    try {
+      const niche = this.niche.get(task.goalId) ?? "the target market";
+      if (agent.spec.role === "research") {
+        const products = await runResearch(agent, task, niche, onProgress);
+        this.research.set(task.goalId, products);
+        task.outputData = products;
+        task.output = `${products.length} live products`;
+      } else if (agent.spec.role === "store-builder") {
+        const url = await runStoreBuilder(agent, task, this.research.get(task.goalId) ?? [], onProgress);
+        task.output = url;
+      } else if (agent.spec.role === "copywriter") {
+        task.output = await runCopywriter(agent, task, niche, this.research.get(task.goalId) ?? [], onProgress);
+      }
+      this.completeTask(task, agent, "done");
+    } catch (err: any) {
+      task.status = "failed";
+      task.finishedAt = new Date().toISOString();
+      agent.status = "failed";
+      registry.upsert(agent, `Task failed: ${err.message}`);
+      bus.post({ threadId: task.goalId, from: agent.id, kind: "system", body: `Task failed: ${err.message}` });
+      this.emitTask(task);
+      this.maybeFinishGoal(task.goalId);
+    } finally {
+      this.realRunning.delete(task.id);
+    }
+  }
+
+  private completeTask(task: Task, agent: AgentRecord, _status: "done") {
+    task.progress = 100;
+    task.status = "done";
+    task.finishedAt = new Date().toISOString();
+    agent.status = "done";
+    registry.upsert(agent, `Task complete: ${task.title}`);
+    this.emitTask(task);
+    this.maybeFinishGoal(task.goalId);
   }
 
   private advance(task: Task) {
@@ -276,9 +342,18 @@ class Orchestrator extends EventEmitter {
     const goal = this.goals.get(goalId);
     if (!goal) return;
     const tasks = [...this.tasks.values()].filter((t) => t.goalId === goalId);
-    if (!tasks.every((t) => t.status === "done")) return;
+    if (!tasks.every((t) => t.status === "done" || t.status === "failed")) return;
+    if (tasks.some((t) => t.status === "failed")) {
+      goal.status = "failed";
+      this.emitGoal(goal);
+      bus.post({ threadId: goalId, from: "ceo", kind: "status", body: `Goal halted — a worker failed or was denied. See the thread.` });
+      const ceoRec = registry.get(CEO_ID);
+      if (ceoRec) { ceoRec.status = "waiting"; registry.upsert(ceoRec, `Goal failed: ${goal.text.slice(0, 60)}`); }
+      return;
+    }
     goal.status = "done";
-    goal.deliverable = /store|shop/i.test(goal.text) ? "https://agentcorp-dev.myshopify.com" : "Brief posted in thread";
+    const builderUrl = tasks.find((t) => registry.get(t.agentId ?? "")?.spec.role === "store-builder")?.output;
+    goal.deliverable = builderUrl ?? (/store|shop/i.test(goal.text) ? "https://agentcorp-dev.myshopify.com (simulated)" : "Brief posted in thread");
     this.emitGoal(goal);
     const ceo = registry.get(CEO_ID);
     if (ceo) { ceo.status = "waiting"; registry.upsert(ceo, `Goal complete: ${goal.text.slice(0, 60)}`); }
@@ -299,6 +374,10 @@ class Orchestrator extends EventEmitter {
     if (this.ticker) { clearInterval(this.ticker); this.ticker = undefined; }
     this.tasks.clear();
     this.goals.clear();
+    this.niche.clear();
+    this.research.clear();
+    this.realRunning.clear();
+    escalations.clear();
     bus.clear();
     registry.clear();
   }
