@@ -146,10 +146,23 @@ async function probeNvidia(): Promise<{ status: CheckStatus; detail: string; fix
 
 async function probeFeatherless(): Promise<{ status: CheckStatus; detail: string; fix?: string }> {
   const base = (process.env.FEATHERLESS_API_BASE ?? "https://api.featherless.ai/v1").replace(/\/$/, "");
-  const res = await fetch(`${base}/models`, { headers: { Authorization: `Bearer ${process.env.FEATHERLESS_API_KEY}` }, signal: t() });
-  if (res.ok) return { status: "pass", detail: "Featherless endpoint answered — worker inference on Featherless-hosted Nemotron is live (it wins auto-detect when no WORKER_BACKEND is set)." };
-  if (res.status === 401 || res.status === 403) return { status: "fail", detail: `The key was rejected (${res.status}).`, fix: "Create a fresh key at https://featherless.ai (hackathon usage tokens apply there) and paste it again in Connections." };
-  return { status: "fail", detail: `${base}/models answered HTTP ${res.status}.`, fix: "If you overrode FEATHERLESS_API_BASE, make sure the endpoint is reachable; otherwise check https://featherless.ai status." };
+  // A real 1-token completion, not /models: listing models is free and passes
+  // even on an account with ZERO credit, which then 402s on every actual task.
+  const model = process.env.WORKER_MODEL ?? "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16";
+  const res = await fetch(`${base}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.FEATHERLESS_API_KEY}` },
+    body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: "user", content: "ping" }] }),
+    signal: t(),
+  });
+  if (res.ok) return { status: "pass", detail: "Featherless answered a 1-token test call — worker inference is live (this brain wins auto-detect when no WORKER_BACKEND is set)." };
+  const bodyText = (await res.text()).slice(0, 300);
+  if (res.status === 402 || /insufficient[_ ]credits/i.test(bodyText))
+    return { status: "fail", detail: "The key is valid but the Featherless account has NO credit — every agent task will fail until this is fixed.", fix: "Add credits at https://featherless.ai (hackathon usage tokens apply there), or remove FEATHERLESS_API_KEY in Connections to fall back to another brain / simulation." };
+  if (res.status === 401 || res.status === 403) return { status: "fail", detail: `The key was rejected (${res.status}).`, fix: "Create a fresh key at https://featherless.ai and paste it again in Connections." };
+  if (res.status === 404) return { status: "warn", detail: `The key works but model "${model}" was not found (404).`, fix: "Set WORKER_MODEL in .env to a model listed at https://featherless.ai/models." };
+  if (res.status === 429) return { status: "warn", detail: "The key works but is currently rate-limited (429).", fix: "Fine for the demo — worker calls are small. If it persists, wait a minute." };
+  return { status: "fail", detail: `${base}/chat/completions answered HTTP ${res.status}: ${bodyText.slice(0, 120)}`, fix: "If you overrode FEATHERLESS_API_BASE, make sure the endpoint is reachable; otherwise check https://featherless.ai status." };
 }
 
 async function probeHiddenLayer(): Promise<{ status: CheckStatus; detail: string; fix?: string }> {

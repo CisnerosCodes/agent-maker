@@ -15,7 +15,8 @@ import { workerMode, runResearch, runStoreBuilder, runCopywriter, gateOrEscalate
 import { escalations } from "../security/escalations.js";
 import { runMemory, type RunRecord } from "../memory/runs.js";
 import { missingFor } from "../config/env.js";
-import { companyProfile } from "../config/company.js";
+import { companyProfile, clearCompanyProfile } from "../config/company.js";
+import { friendlyError } from "../config/errors.js";
 import { matchPlaybook } from "../roles/library.js";
 
 const CEO_ID = "ceo-01";
@@ -394,8 +395,9 @@ class Orchestrator extends EventEmitter {
       task.status = "failed";
       task.finishedAt = new Date().toISOString();
       agent.status = "failed";
-      registry.upsert(agent, `Task failed: ${err.message}`);
-      bus.post({ threadId: task.goalId, from: agent.id, kind: "system", body: `Task failed: ${err.message}` });
+      const human = friendlyError(err.message);
+      registry.upsert(agent, `Task failed: ${human}`);
+      bus.post({ threadId: task.goalId, from: agent.id, kind: "system", body: `Task failed: ${human}` });
       this.emitTask(task);
       this.maybeFinishGoal(task.goalId);
     } finally {
@@ -538,6 +540,10 @@ class Orchestrator extends EventEmitter {
     this.lastResearchId = undefined;
     escalations.clear();
     if (wipeMemory) runMemory.clear();
+    // Full reset re-runs onboarding: the intake questions (niche, what you
+    // already have, starter team) are part of every fresh demo, not one-time
+    // setup. keepMemory resets preserve the profile along with the learning.
+    if (wipeMemory) clearCompanyProfile();
     bus.clear();
     registry.clear();
   }

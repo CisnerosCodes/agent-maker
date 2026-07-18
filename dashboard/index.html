@@ -240,6 +240,8 @@
     .toast { background: var(--ink); color: #fff; border-radius: 9px; padding: .6rem .9rem; font-size: .8rem; line-height: 1.45; box-shadow: var(--shadow); animation: toast-in .18s ease; }
     .toast.err { background: var(--red); }
     .toast.ok { background: var(--green); }
+    .toast .toast-fix { margin-top: .35rem; opacity: .92; }
+    .toast a { display: block; margin-top: .35rem; color: #fff; font-weight: 600; text-decoration: underline; }
     @keyframes toast-in { from { transform: translateY(8px); opacity: 0; } }
 
     /* CEO question banner — the clarifying question must not hide in a closed panel */
@@ -434,26 +436,63 @@
 
     // Every button press gets visible feedback — silent failure is what makes
     // buttons feel broken. api() checks the HTTP result and surfaces errors.
-    function toast(msg, kind) {
+    // toast(msg, kind, extra): extra = { fix, link: {href, label}, support }
+    // renders a plain-English fix line, a clickable "how to fix" link, and a
+    // support mailto — written for a non-technical founder, not a developer.
+    function toast(msg, kind, extra) {
       const el = document.createElement("div");
       el.className = "toast" + (kind ? " " + kind : "");
-      el.textContent = msg;
+      const text = document.createElement("div");
+      text.textContent = msg;
+      el.appendChild(text);
+      if (extra?.fix) {
+        const fix = document.createElement("div");
+        fix.className = "toast-fix";
+        fix.textContent = extra.fix;
+        el.appendChild(fix);
+      }
+      if (extra?.link) {
+        const a = document.createElement("a");
+        a.href = extra.link.href; a.textContent = extra.link.label;
+        if (/^https?:/.test(extra.link.href)) a.target = "_blank";
+        el.appendChild(a);
+      }
+      if (extra?.support) {
+        const a = document.createElement("a");
+        a.href = `mailto:${extra.support}?subject=${encodeURIComponent("Agent-Maker problem: " + msg.slice(0, 80))}`;
+        a.textContent = `This one is on us — email ${extra.support} and we'll fix it`;
+        el.appendChild(a);
+      }
       $("toasts").appendChild(el);
-      setTimeout(() => el.remove(), kind === "err" ? 7000 : 3500);
+      // Errors with reading material stay up long enough to actually read.
+      setTimeout(() => el.remove(), kind === "err" ? (extra ? 15000 : 7000) : 3500);
     }
     async function api(path, opts, { quiet } = {}) {
       let res;
       try {
         res = await fetch(path, opts);
       } catch (err) {
-        toast("Cannot reach the server — is `npm run dev` still running? (" + err.message + ")", "err");
+        toast("Can't reach the app server.", "err", {
+          fix: "The window running `npm run dev` probably closed or crashed. Reopen a terminal in the project folder and run `npm run dev`, then refresh this page.",
+          link: { href: "/setup", label: "Then open the setup checker to confirm everything is green" },
+        });
         throw err;
       }
       let data = {};
       try { data = await res.json(); } catch {}
       if (!res.ok || data.ok === false || data.error) {
         const msg = data.error || `Request failed (HTTP ${res.status})`;
-        if (!quiet) toast(msg, "err");
+        if (!quiet) {
+          const configSmell = /key|token|credential|API|env|connect/i.test(msg);
+          if (data.ourFault || res.status >= 500) {
+            toast(msg, "err", { support: data.support || "adrianbencisneros@gmail.com",
+              link: configSmell ? { href: "/setup", label: "Run the setup checker — it names the exact fix" } : undefined });
+          } else {
+            toast(msg, "err", data.fix || configSmell
+              ? { fix: data.fix, link: { href: "/setup", label: "Run the setup checker — it names the exact fix" } }
+              : undefined);
+          }
+        }
         return { ...data, ok: false, error: msg };
       }
       return data;
@@ -800,12 +839,20 @@
     pick("wObjective", true); pick("wStore", true); pick("wAssets", false); pick("wAgents", false);
     presetAgents();
 
+    // The intake is part of every fresh demo: Launch with no profile opens the
+    // wizard first (goal text is kept and fires right after), and a full Reset
+    // wipes the profile server-side so the questions come back.
+    let hasProfile = false;
+    let pendingGoalText = null;
     function openWizard() { $("wizard").classList.add("open"); $("wizardBack").classList.add("open"); }
     function closeWizard() { $("wizard").classList.remove("open"); $("wizardBack").classList.remove("open"); }
-    $("wSkip").onclick = closeWizard;
+    $("wSkip").onclick = () => {
+      closeWizard();
+      if (pendingGoalText) { const t = pendingGoalText; pendingGoalText = null; launchGoal(t); }
+    };
     $("wSave").onclick = async () => {
       const storeChoice = selected("wStore")[0] || "wants";
-      const res = await fetch("/api/company", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({
+      const data = await api("/api/company", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({
         name: $("wName").value, niche: $("wNiche").value,
         objective: selected("wObjective")[0] || "everything",
         objectiveNote: $("wObjectiveNote").value,
@@ -814,11 +861,18 @@
         assets: selected("wAssets"), starterAgents: selected("wAgents"),
         context: $("wContext").value,
       }) });
-      const data = await res.json();
+      if (data.ok === false) return; // api() already toasted the error; keep the wizard open
+      hasProfile = true;
       closeWizard();
-      if (data.suggestedGoal) { $("goalInput").value = data.suggestedGoal; $("goalInput").focus(); }
+      if (pendingGoalText) {
+        // They typed a goal, we interrupted with the intake — launch it now.
+        const t = pendingGoalText; pendingGoalText = null;
+        $("goalInput").value = t;
+        launchGoal(t);
+      } else if (data.suggestedGoal) { $("goalInput").value = data.suggestedGoal; $("goalInput").focus(); }
     };
     fetch("/api/company").then(r => r.json()).then(d => {
+      hasProfile = !!d.profile;
       if (!d.profile) openWizard();
       else if (d.suggestedGoal) $("goalInput").placeholder = `Give the CEO a goal — suggested: "${d.suggestedGoal}"`;
     });
@@ -826,9 +880,7 @@
     function renderAll() { renderDial(); renderPlans(); renderEscalations(); renderAsks(); renderLearning(); renderGoals(); renderSummary(); renderGrid(); renderChat(); renderSelectors(); if (openAgentId) renderDrawer(); }
 
     // --- actions ---
-    $("goalBtn").onclick = async () => {
-      const text = $("goalInput").value.trim();
-      if (!text) return;
+    async function launchGoal(text) {
       const btn = $("goalBtn");
       btn.disabled = true; btn.textContent = "Launching…";
       try {
@@ -842,6 +894,19 @@
       } finally {
         btn.disabled = false; btn.textContent = "Launch";
       }
+    }
+    $("goalBtn").onclick = () => {
+      const text = $("goalInput").value.trim();
+      if (!text) return;
+      if (!hasProfile) {
+        // Intake first — their answers (niche, what exists, starter team)
+        // shape the org this goal is about to hire.
+        pendingGoalText = text;
+        toast("Quick setup first — your answers shape the team. Your goal launches right after.", "ok");
+        openWizard();
+        return;
+      }
+      launchGoal(text);
     };
     $("goalInput").addEventListener("keydown", e => { if (e.key === "Enter") $("goalBtn").click(); });
 
@@ -869,7 +934,14 @@
       }
       clearTimeout(resetArmed); resetArmed = null; btn.textContent = "Reset demo";
       const r = await api("/reset", { method: "POST" });
-      if (r.ok !== false) toast("Demo reset — everything cleared.", "ok");
+      if (r.ok !== false) {
+        // Server wiped the company profile too — re-run the intake so the
+        // next launch starts with the questions, exactly like a first visit.
+        hasProfile = false;
+        pendingGoalText = null;
+        toast("Demo reset — everything cleared. Set up your company to go again.", "ok");
+        openWizard();
+      }
     };
     $("attackBtn").onclick = async () => {
       const r = await api("/attack", { method: "POST", headers: {"Content-Type":"application/json"}, body: "{}" });

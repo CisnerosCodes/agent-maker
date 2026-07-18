@@ -19,6 +19,9 @@ import { companyProfile, saveCompanyProfile, suggestedFirstGoal, STARTER_PACKS }
 
 const PORT = Number(process.env.DASHBOARD_PORT ?? 4000);
 const EVALS_DIR = process.env.EVALS_DIR ?? "./data/evals";
+// Shown to the user when an error is on OUR side (unexpected 500s), so a
+// non-technical founder has somewhere to go besides the terminal.
+export const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL ?? "adrianbencisneros@gmail.com";
 const clients = new Set<ServerResponse>();
 
 function broadcast(type: string, data: unknown) {
@@ -224,7 +227,10 @@ createServer(async (req, res) => {
       res.writeHead(404).end();
     }
   } catch (err: any) {
-    json(res, { error: err.message }, 500);
+    // Unexpected = our bug, not the user's. Give them a way out that is not
+    // "read the stack trace": the setup checker for config issues, and a
+    // support contact for everything else.
+    json(res, { error: err.message, ourFault: true, support: SUPPORT_EMAIL }, 500);
   }
 }).listen(PORT, () => {
   console.log(`Dashboard: http://localhost:${PORT}`);
