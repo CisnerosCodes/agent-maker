@@ -4,17 +4,28 @@ Owner: Adrian. This is the concrete build order for taking the scaffold from
 stubs to the two money demos. It complements `PLAN.md` (the battle plan) —
 this doc is *what to type next*, in priority order.
 
+> Governance/harness decisions (autonomy dial, who-decides-the-agents, 5-module
+> spec schema) live in `docs/HARNESS_AND_GOVERNANCE.md`. Security integration
+> contracts live in `specs/security/` (Sky). This doc is the build order.
+
 ## Where the code is today
 
 | Piece | File | State |
 |---|---|---|
 | Types | `src/types.ts` | done |
 | Registry (JSON + events) | `src/registry/registry.ts` | done, working |
-| Dashboard SSE + org chart | `dashboard/server.ts`, `dashboard/index.html` | working; approve/deny endpoints are no-ops |
-| Eval harness (model testing) | `src/evals/` | **done, working** — see `/evals` on the dashboard |
-| Factory pipeline | `src/factory/factory.ts` | skeleton; policy render + NemoClaw spawn are TODO(Sky) |
+| Message bus | `src/bus/bus.ts` | done — company spine, SSE-streamed |
+| Orchestrator | `src/orchestrator/orchestrator.ts` | done — goal intake, clarifying Qs, task graph, work loop |
+| Dashboard SSE + org chart | `dashboard/server.ts`, `dashboard/index.html` | working; **escalation + plan approve/deny wired**, autonomy dial live |
+| Governance (autonomy dial) | `src/governance/governance.ts` | **done** — assisted/supervised/autonomous, live-toggleable |
+| Eval harness (model testing) | `src/evals/` | **done, working** — see `/evals`; v2 upgrades below |
+| Worker loop (real) | `src/factory/worker.ts` | done — real research fetch + gate-or-escalate; NemoClaw spawn still TODO(Sky) |
+| Run memory (learning loop) | `src/memory/runs.ts` | **done** — recall + reuse + delta |
+| Role library | `src/roles/library.ts` | **done** — playbooks + per-role reasoning defaults |
+| Factory pipeline | `src/factory/factory.ts` | policy render done; NemoClaw spawn is TODO(Sky) |
 | Vault | `src/vault/vault.ts` | identity issue + Resend send done; needs real keys in `.env` |
-| SecurityGate | `src/security/gate.ts` | routing logic done; real HiddenLayer call is TODO(Sky) |
+| SecurityGate | `src/security/gate.ts` | heuristic floor live + HL merge logic; real HiddenLayer OAuth call is TODO(Sky) |
+| Security specs | `specs/security/` | **done (Sky)** — HiddenLayer/NemoClaw/OpenShell contracts + corrections |
 | CEO | `src/ceo/CEO_PROMPT.md` | prompt v1; not yet wired to troublemaker |
 
 ## Model policy (from the eval harness)
@@ -130,3 +141,57 @@ The eval harness doubles as the orchestration's regression suite: after wiring
 the worker loop, point `npm run eval -- --backend nvidia --models <worker-model>`
 at the exact backend workers use. A worker model that can't clear T1–T2 will
 corrupt Factory JSON handoffs — catch it on the ladder, not on stage.
+
+## Nemotron on the eval/worker backend (research-verified)
+
+Confirmed from NVIDIA's OpenAPI reference (not guessed):
+- **Slug:** `nvidia/nemotron-3-super-120b-a12b` (verified valid on
+  `integrate.api.nvidia.com/v1`). Key must start with `nvapi-`.
+- **Reasoning is a request param, not a system-prompt directive.** In the
+  OpenAI-compatible call, ride it in `extra_body`:
+  - high → `{"chat_template_kwargs": {"enable_thinking": true}}`
+  - medium/low → `{"chat_template_kwargs": {"enable_thinking": true, "low_effort": true}}`
+    (optionally `+ "reasoning_budget": <int>` with `temperature:1.0, top_p:0.95`)
+  - off → `{"chat_template_kwargs": {"enable_thinking": false}}`
+  The docs-UI `reasoning_effort: none/low/high` is a page preset, NOT a wire
+  field — don't send it literally.
+- **NemoClaw dispatch takes per-call `--model` / `--thinking`** (forwarded to
+  in-sandbox OpenClaw); model is not fixed at sandbox creation. One residual
+  unknown: how OpenClaw's `--thinking` maps onto Nemotron's `enable_thinking`
+  inside the NVIDIA provider adapter — verify with one live call.
+
+When wiring `reasoning` into `OpenAICompatBackend`, translate the `AgentSpec.reasoning`
+field (`low|medium|high`) to the `extra_body` above. Tiny, non-breaking change.
+
+## Eval ladder v2 — benchmark-anchored scoring (research-backed upgrades)
+
+Turn the hand-made ladder into a defensible eval by anchoring to published
+benchmarks and switching from binary pass/fail to partial-credit + meltdown
+detection. Priority order (highest ROI first):
+
+1. **CSR + ISR scoring (AgentIF).** Replace binary pass/fail with **Constraint
+   Success Rate** (satisfied/total constraints — partial credit) and
+   **Instruction Success Rate** (all-constraints-met — the strict gate). Our
+   grader's per-constraint `notes[]` already tracks this; CSR is nearly free.
+2. **pass^k for the long-horizon tier (τ²-bench).** Run each level k=3–5×, report
+   pass@1 (capability) next to pass^k (reliability). Our multi-trial harness
+   already supports it — reporting change only. "pass^3 = X%" is the most
+   citable number we can put on a slide.
+3. **Add tool-use + conditional constraint categories (AgentIF).** The exact gap
+   between IFEval (text-only) and an agent ladder; empirically the hardest
+   category. New levels in the structured/constraint tiers.
+4. **Adversarial tier on AgentDojo's utility×security split.** Score "completed
+   the task" and "resisted the injection" separately (2×2 outcomes), using the
+   `important_instructions` fake-authority template as the canonical injection.
+   Ties our poisoned-doc demo to a published adversarial benchmark.
+5. **Meltdown Onset Point via sliding-window tool-call entropy.** Post-hoc
+   diagnostic on existing transcripts (no new eval content): first step where
+   tool-call diversity spikes above baseline (θ≈1.71 bits, window=5). Turns our
+   "breaking point" into a measured meltdown with a decay curve — the best demo
+   visual. Graceful Degradation Score = Σ(weight × subtask-passed) for the
+   long-horizon tier's partial credit.
+
+IFEval gap-fills for the format/structured tiers: case control, no-comma,
+start/end phrase anchors, placeholder counts. Adopt IFEval's `category:subtype`
+ID convention so "our level N maps to `length_constraints:number_words`" is a
+checkable claim.

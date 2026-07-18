@@ -20,6 +20,7 @@ export interface RoleTemplate {
   policyTemplate: string;
   estimateSec: number;
   dependsOn: number[]; // indices into the playbook's roles array
+  reasoning: "low" | "medium" | "high"; // Nemotron thinking budget per role (Sky spec §6.2)
 }
 
 export interface Playbook {
@@ -44,6 +45,7 @@ const research: RoleTemplate = {
   policyTemplate: "worker-research.yaml",
   estimateSec: 28,
   dependsOn: [],
+  reasoning: "medium", // summarize/extract over ingested docs
 };
 
 export const PLAYBOOKS: Playbook[] = [
@@ -58,14 +60,14 @@ export const PLAYBOOKS: Playbook[] = [
         titleFor: () => "Build: products & collections in the dev store",
         objectiveFor: () => "Create products, collections and theme settings in the Shopify dev store from research output",
         tools: ["shopify-admin"], credentials: ["SHOPIFY_ADMIN_TOKEN"], policyTemplate: "worker-storebuilder.yaml",
-        estimateSec: 40, dependsOn: [0],
+        estimateSec: 40, dependsOn: [0], reasoning: "low", // mostly templated tool calls
       },
       {
         role: "copywriter",
         titleFor: (c) => `Copy: descriptions & brand voice for ${c.niche}`,
         objectiveFor: (c) => `Write product descriptions and store copy for ${c.niche}`,
         tools: [], credentials: [], policyTemplate: "worker-minimal.yaml",
-        estimateSec: 22, dependsOn: [0],
+        estimateSec: 22, dependsOn: [0], reasoning: "low", // short-form generation
       },
     ],
   },
@@ -80,14 +82,14 @@ export const PLAYBOOKS: Playbook[] = [
         titleFor: (c) => `Strategy: campaign plan for ${c.niche}`,
         objectiveFor: (c) => `Design a channel-by-channel campaign plan for ${c.niche} from research`,
         tools: [], credentials: [], policyTemplate: "worker-minimal.yaml",
-        estimateSec: 26, dependsOn: [0],
+        estimateSec: 26, dependsOn: [0], reasoning: "high", // planning needs headroom
       },
       {
         role: "copywriter",
         titleFor: (c) => `Copy: ad & social creative for ${c.niche}`,
         objectiveFor: (c) => `Write ad headlines and social posts for ${c.niche} per the strategy`,
         tools: [], credentials: [], policyTemplate: "worker-minimal.yaml",
-        estimateSec: 22, dependsOn: [1],
+        estimateSec: 22, dependsOn: [1], reasoning: "low",
       },
     ],
   },
@@ -102,7 +104,7 @@ export const PLAYBOOKS: Playbook[] = [
         titleFor: () => "Synthesize findings into a brief",
         objectiveFor: (c) => `Turn research findings into an actionable brief for: ${c.goalText}`,
         tools: [], credentials: [], policyTemplate: "worker-minimal.yaml",
-        estimateSec: 20, dependsOn: [0],
+        estimateSec: 20, dependsOn: [0], reasoning: "medium",
       },
     ],
   },
