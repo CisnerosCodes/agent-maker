@@ -11,6 +11,7 @@
 //   --backend api|cli|nvidia|file   (default: api if key set, else cli)
 //   --models  a,b,c                 model ids for the chosen backend
 //   --trials  N                     trials per level (default 2; file backend: 1)
+//   --passk   K                     pass^k window (default min(3,trials)); reliability across trials
 //   --levels  id1,id2               run only these level ids
 //   --concurrency N                 parallel requests per model (default 4)
 //   --file    path                  responses JSON (file backend)
@@ -21,7 +22,24 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getLevels } from "./levels.js";
 import { makeBackend } from "./backends.js";
-import type { EvalRun, Level, LevelResult, ModelBackend, ModelRun, TrialResult } from "./types.js";
+import type { ConstraintCheck, EvalRun, Level, LevelResult, ModelBackend, ModelRun, Tier, TrialResult } from "./types.js";
+
+// pass^k (tau-bench): probability a random k-subset of n trials are ALL passes.
+// C(c,k)/C(n,k), 0 when k>c. Averaged across levels at the model level.
+function binom(n: number, k: number): number {
+  if (k < 0 || k > n) return 0;
+  let r = 1;
+  for (let i = 0; i < k; i++) r = (r * (n - i)) / (i + 1);
+  return r;
+}
+function passK(passes: number, trials: number, k: number): number {
+  if (k > trials) return NaN; // not enough trials to measure pass^k
+  return binom(passes, k) / binom(trials, k);
+}
+function mean(xs: number[]): number {
+  const v = xs.filter((x) => !Number.isNaN(x));
+  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 0;
+}
 
 function parseArgs(argv: string[]): Record<string, string> {
   const args: Record<string, string> = {};
@@ -34,10 +52,14 @@ function parseArgs(argv: string[]): Record<string, string> {
 async function runTrial(backend: ModelBackend, level: Level, model: string, trial: number): Promise<TrialResult> {
   try {
     const { text, latencyMs } = await backend.complete(level.prompt, { levelId: level.id, trial, model });
-    const { pass, notes } = level.grade(text);
-    return { trial, response: text, pass, notes, latencyMs };
+    const g = level.grade(text);
+    // Synthesize a single constraint from `pass` when the grader didn't emit any
+    // (single-check levels) so CSR is well-defined everywhere.
+    const constraints: ConstraintCheck[] = g.constraints?.length ? g.constraints : [{ label: level.title, pass: g.pass }];
+    const csr = constraints.filter((c) => c.pass).length / constraints.length;
+    return { trial, response: text, pass: g.pass, notes: g.notes, constraints, csr, latencyMs };
   } catch (err: any) {
-    return { trial, response: "", pass: false, notes: [`Request failed: ${err.message}`], latencyMs: null, error: err.message };
+    return { trial, response: "", pass: false, notes: [`Request failed: ${err.message}`], constraints: [{ label: level.title, pass: false }], csr: 0, latencyMs: null, error: err.message };
   }
 }
 
@@ -47,6 +69,7 @@ async function runModel(
   levels: Level[],
   trials: number,
   concurrency: number,
+  k: number,
 ): Promise<ModelRun> {
   const jobs: Array<{ level: Level; trial: number }> = [];
   for (const level of levels) for (let t = 1; t <= trials; t++) jobs.push({ level, trial: t });
@@ -60,7 +83,7 @@ async function runModel(
       const job = jobs[next++];
       const res = await runTrial(backend, job.level, model, job.trial);
       results.get(job.level.id)!.push(res);
-      const mark = res.pass ? "PASS" : "FAIL";
+      const mark = res.pass ? "PASS" : `${Math.round(res.csr * 100)}% CSR`;
       console.log(`  [${model}] ${job.level.id} trial ${job.trial}: ${mark}${res.error ? ` (${res.error})` : ""}`);
     }
   }
@@ -68,13 +91,21 @@ async function runModel(
 
   const levelResults: LevelResult[] = levels.map((l) => {
     const ts = results.get(l.id)!.sort((a, b) => a.trial - b.trial);
-    const passRate = ts.length ? ts.filter((t) => t.pass).length / ts.length : 0;
-    return { levelId: l.id, title: l.title, tier: l.tier, trials: ts, passRate };
+    const n = ts.length;
+    const fullPasses = ts.filter((t) => t.pass).length;
+    const isr = n ? fullPasses / n : 0;
+    const csr = n ? mean(ts.map((t) => t.csr)) : 0;
+    return { levelId: l.id, title: l.title, tier: l.tier, trials: ts, passRate: isr, isr, csr, passK: passK(fullPasses, n, k) };
   });
 
-  const cleared = levelResults.filter((r) => r.passRate === 1).length;
-  const breaking = levelResults.find((r) => r.passRate < 1);
+  const cleared = levelResults.filter((r) => r.isr === 1).length;
+  const breaking = levelResults.find((r) => r.isr < 1);
   const latencies = levelResults.flatMap((r) => r.trials.map((t) => t.latencyMs)).filter((x): x is number => x != null);
+
+  const tiers = [...new Set(levelResults.map((r) => r.tier))] as Tier[];
+  const tierCsr: Partial<Record<Tier, number>> = {};
+  for (const tier of tiers) tierCsr[tier] = mean(levelResults.filter((r) => r.tier === tier).map((r) => r.csr));
+
   return {
     model,
     backend: backend.name,
@@ -82,7 +113,12 @@ async function runModel(
     cleared,
     total: levelResults.length,
     breakingPoint: breaking ? breaking.levelId : null,
-    score: levelResults.reduce((s, r) => s + r.passRate, 0),
+    score: levelResults.reduce((s, r) => s + r.isr, 0),
+    csr: mean(levelResults.map((r) => r.csr)),
+    isr: mean(levelResults.map((r) => r.isr)),
+    passK: mean(levelResults.map((r) => r.passK)),
+    k,
+    tierCsr,
     avgLatencyMs: latencies.length ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length) : null,
   };
 }
@@ -93,21 +129,27 @@ function markdownReport(run: EvalRun): string {
   md.push(`Backend: **${run.backend}** · Trials/level: **${run.trials}** · Started: ${run.startedAt}`);
   if (run.runnerNote) md.push(`> ${run.runnerNote}`);
   md.push("");
+  // Per-level: ISR icon + CSR% (partial credit), so a near-miss shows its score.
   md.push(`| Level | Tier | ${run.models.map((m) => m.model).join(" | ")} |`);
   md.push(`|---|---|${run.models.map(() => "---").join("|")}|`);
   const levelIds = run.models[0]?.levels ?? [];
   levelIds.forEach((lr, i) => {
     const cells = run.models.map((m) => {
       const r = m.levels[i];
-      return r.passRate === 1 ? "✅" : r.passRate === 0 ? "❌" : `${Math.round(r.passRate * 100)}%`;
+      const icon = r.isr === 1 ? "✅" : r.isr === 0 ? "❌" : "◐";
+      return `${icon} ${Math.round(r.csr * 100)}% CSR`;
     });
     md.push(`| ${i + 1}. ${lr.title} | ${lr.tier} | ${cells.join(" | ")} |`);
   });
   md.push("");
+  md.push(`_ISR = all constraints met (strict gate); CSR = constraints met (partial credit); pass^${run.models[0]?.k ?? 1} = reliability across trials._`);
+  md.push("");
   for (const m of run.models) {
     md.push(
-      `**${m.model}** — cleared ${m.cleared}/${m.total}, score ${m.score.toFixed(1)}, breaking point: ${m.breakingPoint ?? "none (full clear)"}${m.avgLatencyMs != null ? `, avg latency ${m.avgLatencyMs}ms` : ""}`,
+      `**${m.model}** — ISR ${(m.isr * 100).toFixed(0)}% · CSR ${(m.csr * 100).toFixed(0)}% · pass^${m.k} ${(m.passK * 100).toFixed(0)}% · cleared ${m.cleared}/${m.total} · breaking point: ${m.breakingPoint ?? "none (full clear)"}${m.avgLatencyMs != null ? ` · avg ${m.avgLatencyMs}ms` : ""}`,
     );
+    const curve = Object.entries(m.tierCsr).map(([t, v]) => `${t} ${Math.round((v as number) * 100)}%`).join(" → ");
+    md.push(`  degradation curve (CSR by tier): ${curve}`);
   }
   return md.join("\n");
 }
@@ -125,6 +167,7 @@ async function main() {
   if (backendKind === "file" && files.length > 1 && files.length !== models.length)
     throw new Error(`--file lists ${files.length} files but --models lists ${models.length} models`);
   const trials = backendKind === "file" ? Number(args.trials ?? 1) : Number(args.trials ?? 2);
+  const k = Math.max(1, Math.min(Number(args.passk ?? Math.min(3, trials)), trials)); // pass^k window
   const concurrency = Number(args.concurrency ?? 4);
   const levels = getLevels(args.levels ? args.levels.split(",") : undefined);
   const outDir = args.out ?? "data/evals";
@@ -155,7 +198,7 @@ async function main() {
       continue;
     }
     console.log(`\n=== ${model} ===`);
-    const result = await runModel(backendFor(i), model, levels, trials, concurrency);
+    const result = await runModel(backendFor(i), model, levels, trials, concurrency, k);
     run.models.push(result);
     if (fullLadder) cache[model] = { ...result, cached: run.id };
   }

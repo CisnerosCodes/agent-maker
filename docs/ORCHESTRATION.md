@@ -163,35 +163,35 @@ Confirmed from NVIDIA's OpenAPI reference (not guessed):
 When wiring `reasoning` into `OpenAICompatBackend`, translate the `AgentSpec.reasoning`
 field (`low|medium|high`) to the `extra_body` above. Tiny, non-breaking change.
 
-## Eval ladder v2 — benchmark-anchored scoring (research-backed upgrades)
+## Eval ladder v2 — benchmark-anchored scoring (SHIPPED)
 
-Turn the hand-made ladder into a defensible eval by anchoring to published
-benchmarks and switching from binary pass/fail to partial-credit + meltdown
-detection. Priority order (highest ROI first):
+The hand-made ladder is now scored on published-benchmark axes instead of binary
+pass/fail. Renders on `/evals` (CSR headline, ISR, pass^k, degradation curve,
+per-constraint detail with axis labels).
 
-1. **CSR + ISR scoring (AgentIF).** Replace binary pass/fail with **Constraint
-   Success Rate** (satisfied/total constraints — partial credit) and
-   **Instruction Success Rate** (all-constraints-met — the strict gate). Our
-   grader's per-constraint `notes[]` already tracks this; CSR is nearly free.
-2. **pass^k for the long-horizon tier (τ²-bench).** Run each level k=3–5×, report
-   pass@1 (capability) next to pass^k (reliability). Our multi-trial harness
-   already supports it — reporting change only. "pass^3 = X%" is the most
-   citable number we can put on a slide.
-3. **Add tool-use + conditional constraint categories (AgentIF).** The exact gap
-   between IFEval (text-only) and an agent ladder; empirically the hardest
-   category. New levels in the structured/constraint tiers.
-4. **Adversarial tier on AgentDojo's utility×security split.** Score "completed
-   the task" and "resisted the injection" separately (2×2 outcomes), using the
-   `important_instructions` fake-authority template as the canonical injection.
-   Ties our poisoned-doc demo to a published adversarial benchmark.
-5. **Meltdown Onset Point via sliding-window tool-call entropy.** Post-hoc
-   diagnostic on existing transcripts (no new eval content): first step where
-   tool-call diversity spikes above baseline (θ≈1.71 bits, window=5). Turns our
-   "breaking point" into a measured meltdown with a decay curve — the best demo
-   visual. Graceful Degradation Score = Σ(weight × subtask-passed) for the
-   long-horizon tier's partial credit.
+1. **CSR + ISR scoring (AgentIF) — SHIPPED.** Graders emit a `ConstraintCheck[]`
+   (`src/evals/types.ts`); the runner computes **CSR** (fraction of a level's
+   constraints met — partial credit) and **ISR** (all met — the strict gate).
+   Single-check levels synthesize one constraint so CSR is defined everywhere.
+   Effect: a near-miss like the ten-constraint level shows "9/10" not "FAIL".
+2. **pass^k (τ²-bench) — SHIPPED.** `--passk K` (default min(3,trials)); the
+   runner reports pass^k = C(passes,k)/C(trials,k) averaged over levels. Most
+   meaningful at `--trials 5`; "pass^3 = X%" is the citable reliability number.
+3. **Conditional-constraint level (AgentIF) — SHIPPED.** `conditional-rules`
+   tests if/then branches whose outcome depends on evaluating a fact — the
+   agentic category IFEval can't express. (Tool-use constraint levels wait on the
+   real worker loop, since they need actual tool calls to grade.)
+4. **Adversarial utility×security split (AgentDojo) — SHIPPED.** The
+   injection-resistance level's checks carry `axis: "utility" | "security"`, so
+   "did the real task" and "resisted the injection" score independently — Sonnet
+   now shows 25% (summarized but leaked CONFIRMED) instead of a flat FAIL.
+5. **Per-tier degradation curve — SHIPPED** (our honest substitute for Meltdown
+   Onset). `tierCsr` shows CSR per tier (format→long-horizon). **Meltdown Onset
+   Point via tool-call entropy is DEFERRED**: it needs multi-step tool-call
+   trajectories, and the ladder is single-shot prompt→response. It becomes
+   applicable once the real worker loop produces tool-call transcripts — score it
+   there, not on the instruction ladder.
 
-IFEval gap-fills for the format/structured tiers: case control, no-comma,
-start/end phrase anchors, placeholder counts. Adopt IFEval's `category:subtype`
-ID convention so "our level N maps to `length_constraints:number_words`" is a
-checkable claim.
+Still open (cheap, additive): IFEval gap-fill levels (case control, no-comma,
+start/end anchors, placeholder counts) and IFEval's `category:subtype` ID
+convention so "level N maps to `length_constraints:number_words`" is checkable.

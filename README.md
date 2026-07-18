@@ -63,7 +63,7 @@ npm run eval -- --backend nvidia --models nvidia/llama-3.1-nemotron-70b-instruct
 npm run eval -- --backend file --file data/evals/responses-haiku.json --models claude-haiku-4-5
 ```
 
-Results land in `data/evals/` as JSON + Markdown and render live at `http://localhost:4000/evals` (page polls every 3s, so you can watch a run fill in). Multiple trials per level give pass *rates*, not just pass/fail; the report includes each model's breaking point and per-trial failure notes.
+Results land in `data/evals/` as JSON + Markdown and render live at `http://localhost:4000/evals` (page polls every 3s). Scoring is benchmark-anchored, not binary: **CSR** (constraints met — partial credit, AgentIF), **ISR** (all met — strict gate), **pass^k** (reliability across trials, τ²-bench; use `--passk K` with `--trials 5`), an **adversarial utility×security split** (AgentDojo), and a **per-tier degradation curve**. Each model's breaking point and per-constraint detail are in the report.
 
 The `ModelBackend` interface in `src/evals/backends.ts` is the same abstraction the Factory's worker loop uses — if a backend+model clears the ladder, that exact backend+model is demo-safe for workers.
 
