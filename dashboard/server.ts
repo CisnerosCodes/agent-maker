@@ -2,6 +2,7 @@
 // messages) + goal intake, chat, approvals, and the /evals report page.
 // Deliberately boring: node http, no framework.
 
+import "../src/config/load-env.js"; // MUST stay first: loads .env before modules read env
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -11,6 +12,7 @@ import { orchestrator } from "../src/orchestrator/orchestrator.js";
 import { escalations } from "../src/security/escalations.js";
 import { heuristicScan } from "../src/security/detect.js";
 import { governance } from "../src/governance/governance.js";
+import { setupStatus, saveEnvVar } from "../src/config/env.js";
 
 const PORT = Number(process.env.DASHBOARD_PORT ?? 4000);
 const EVALS_DIR = process.env.EVALS_DIR ?? "./data/evals";
@@ -85,6 +87,20 @@ createServer(async (req, res) => {
       res.end(readFileSync(new URL("./evals.html", import.meta.url)));
     } else if (req.url === "/api/eval-runs") {
       json(res, evalRuns());
+    } else if (req.url === "/api/setup" && req.method === "GET") {
+      // BOOLEANS ONLY — never returns credential values.
+      json(res, setupStatus());
+    } else if (req.url === "/api/setup" && req.method === "POST") {
+      // Secret intake: value -> process.env + .env, then GONE. Not echoed,
+      // not logged, not posted to the bus — no model ever sees it.
+      const { key, value } = await body(req);
+      try {
+        saveEnvVar(String(key ?? ""), String(value ?? ""));
+        broadcast("setup", setupStatus());
+        json(res, { ok: true, status: setupStatus() });
+      } catch (e: any) {
+        json(res, { error: e.message }, 400);
+      }
     } else if (req.url === "/events") {
       res.writeHead(200, {
         "Content-Type": "text/event-stream",

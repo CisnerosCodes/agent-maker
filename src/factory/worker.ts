@@ -26,34 +26,49 @@ export interface Product { title: string; price: number; image?: string }
 // Research data source, in order of preference:
 //   1. Apify actor (real scrape) when APIFY_TOKEN + APIFY_ACTOR are set
 //   2. RESEARCH_SOURCE_URL if the operator points it at a real feed
-//   3. a labeled sample catalog (never presented as live)
-const APIFY_TOKEN = process.env.APIFY_TOKEN;
-const APIFY_ACTOR = process.env.APIFY_ACTOR; // e.g. "junglee/amazon-crawler"
-const SAMPLE_SOURCE = process.env.RESEARCH_SOURCE_URL ?? "https://dummyjson.com/products/category/mens-shoes?limit=10";
+//   3. a labeled sample catalog SEARCHED BY NICHE (never presented as live,
+//      and never off-topic — a desk-accessories goal must not return sneakers)
+// Env is read at call time so keys pasted into BUSINESS SETUP apply instantly.
+const apifyToken = () => process.env.APIFY_TOKEN;
+const apifyActor = () => process.env.APIFY_ACTOR; // e.g. "junglee/amazon-crawler"
 
 export function researchSourceLabel(): string {
-  if (APIFY_TOKEN && APIFY_ACTOR) return `live Apify scrape (actor ${APIFY_ACTOR})`;
+  if (apifyToken() && apifyActor()) return `live Apify scrape (actor ${apifyActor()})`;
   if (process.env.RESEARCH_SOURCE_URL) return `operator feed (${process.env.RESEARCH_SOURCE_URL})`;
-  return "sample catalog (set APIFY_TOKEN + APIFY_ACTOR for a live scrape)";
+  return "sample catalog matched to your niche (connect Apify in BUSINESS SETUP for a live scrape)";
 }
 
 async function fetchProducts(niche: string): Promise<any[]> {
-  if (APIFY_TOKEN && APIFY_ACTOR) {
+  const token = apifyToken(), actor = apifyActor();
+  if (token && actor) {
     // Apify run-sync-get-dataset-items: runs the actor and returns its dataset.
-    const url = `https://api.apify.com/v2/acts/${APIFY_ACTOR.replace("/", "~")}/run-sync-get-dataset-items?token=${APIFY_TOKEN}`;
+    const url = `https://api.apify.com/v2/acts/${actor.replace("/", "~")}/run-sync-get-dataset-items?token=${token}`;
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ search: niche, maxItems: 10 }),
       signal: AbortSignal.timeout(90000),
     });
-    if (!res.ok) throw new Error(`Apify actor ${APIFY_ACTOR} failed: HTTP ${res.status} ${(await res.text()).slice(0, 150)}`);
+    if (!res.ok) throw new Error(`Apify actor ${actor} failed: HTTP ${res.status} ${(await res.text()).slice(0, 150)}`);
     return await res.json();
   }
-  const res = await fetch(SAMPLE_SOURCE, { signal: AbortSignal.timeout(15000) });
-  if (!res.ok) throw new Error(`source fetch failed: HTTP ${res.status}`);
-  const data: any = await res.json();
-  return data.products ?? data.items ?? (Array.isArray(data) ? data : []);
+  if (process.env.RESEARCH_SOURCE_URL) {
+    const res = await fetch(process.env.RESEARCH_SOURCE_URL, { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error(`source fetch failed: HTTP ${res.status}`);
+    const data: any = await res.json();
+    return data.products ?? data.items ?? (Array.isArray(data) ? data : []);
+  }
+  // Sample catalog: search dummyjson by the niche terms so the findings are at
+  // least on-topic; fall back to a generic top-10 only if the search is empty.
+  const q = encodeURIComponent(niche.split(/\s+/).slice(0, 3).join(" "));
+  const search = await fetch(`https://dummyjson.com/products/search?q=${q}&limit=10`, { signal: AbortSignal.timeout(15000) });
+  if (search.ok) {
+    const data: any = await search.json();
+    if (Array.isArray(data.products) && data.products.length > 0) return data.products;
+  }
+  const res = await fetch("https://dummyjson.com/products?limit=10", { signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error(`sample catalog fetch failed: HTTP ${res.status}`);
+  return ((await res.json()) as any).products ?? [];
 }
 
 export function resolveBrain(): ModelBackend | null {

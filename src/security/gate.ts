@@ -70,7 +70,8 @@ export async function scan(content: string, kind: IoKind, agentId: string): Prom
   }
 }
 
-// IoKind -> HiddenLayer interaction role (spec §4).
+// IoKind -> HiddenLayer message role (spec §4). v2 canonical roles are
+// user | assistant | system | tool.
 const ROLE_MAP: Record<IoKind, string> = {
   user_prompt: "user",
   ingested_document: "user", // document channel, still a user-side input
@@ -79,14 +80,22 @@ const ROLE_MAP: Record<IoKind, string> = {
   tool_result: "tool",
 };
 
-// metadata.model is REQUIRED by the interactions endpoint (verified live: omitting
-// it returns 422). It's a grouping label on HL's side, not a real model call.
+// metadata.model is REQUIRED (omitting it returns 422). It's a grouping label on
+// HL's side, not a real model call. provider is a free label alongside it.
 const HL_MODEL_TAG = process.env.HIDDENLAYER_MODEL_TAG ?? "agent-maker-worker";
+const HL_PROVIDER_TAG = process.env.HIDDENLAYER_PROVIDER_TAG ?? "anthropic";
 
 async function hlScan(content: string, kind: IoKind, agentId: string): Promise<ScanResult> {
+  // Beta runtime endpoint (the SDK's client.runtime.evaluate_interaction). This is
+  // the endpoint our OAuth key is authorized for — no web-console project setup
+  // needed; the project auto-resolves server-side. Body is the canonical
+  // interaction: a messages[] list where content is an array of typed parts (a
+  // plain string is rejected — text must be wrapped in a {type:"text"} part).
   const body = JSON.stringify({
-    metadata: { requester_id: agentId, source: "agent-maker", model: HL_MODEL_TAG },
-    input: { role: ROLE_MAP[kind], content },
+    interaction: {
+      messages: [{ role: ROLE_MAP[kind], content: [{ type: "text", text: content }] }],
+    },
+    metadata: { requester_id: agentId, model: HL_MODEL_TAG, provider: HL_PROVIDER_TAG },
   });
 
   let res = await postInteraction(body, await getToken());
@@ -95,7 +104,7 @@ async function hlScan(content: string, kind: IoKind, agentId: string): Promise<S
     invalidateToken();
     res = await postInteraction(body, await getToken());
   }
-  if (!res.ok) throw new Error(`interactions HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`interaction-evaluations HTTP ${res.status}`);
   return mapFindings(await res.json());
 }
 
@@ -106,8 +115,8 @@ function postInteraction(body: string, token: string): Promise<Response> {
   };
   // Optional: the project auto-resolves server-side; only send an explicit
   // override if the operator set one.
-  if (HL_PROJECT_ID) headers["hl-project-id"] = HL_PROJECT_ID;
-  return fetch(`${HL_API_URL}/detection/v1/interactions`, {
+  if (HL_PROJECT_ID) headers["HL-Project-Id"] = HL_PROJECT_ID;
+  return fetch(`${HL_API_URL}/detection/v2/interaction-evaluations`, {
     method: "POST",
     headers,
     body,
@@ -116,17 +125,22 @@ function postInteraction(body: string, token: string): Promise<Response> {
 }
 
 function mapFindings(raw: any): ScanResult {
-  // Real HiddenLayer V1 schema (verified live 2026-07-18):
-  //   raw.evaluation = { action: "Allow"|"Block"|"Redact"|..., threat_level:
-  //                      "None"|"Low"|"Medium"|"High"|"Critical", has_detections: bool }
-  //   raw.analysis   = [ { name, phase: "input"|"output", detected: bool, findings } ]
-  const evaluation = raw?.evaluation ?? {};
-  const analysis: any[] = raw?.analysis ?? [];
+  // Beta v2 schema (interaction-evaluations / evaluate_interaction):
+  //   raw.outcome = { action: "NONE"|"DETECT"|"REDACT"|"BLOCK",
+  //                   threat_level: "NONE"|"LOW"|"MEDIUM"|"HIGH"|"CRITICAL",
+  //                   detections: [ { ...name/type/category } ] }
+  // NOTE: we intentionally read outcome.detections, NOT the per-message
+  // analysis.signals dict — every signal type is always present there (schema
+  // defaults when nothing fired), so it can't tell us what actually triggered.
+  const outcome = raw?.outcome ?? {};
+  const detections: any[] = outcome.detections ?? [];
   const categories = [
-    ...new Set(analysis.filter((a) => a?.detected).map((a) => String(a?.name ?? "detection"))),
+    ...new Set(
+      detections.map((d) => String(d?.rule_name ?? d?.name ?? d?.type ?? d?.category ?? "detection")),
+    ),
   ];
-  const action = String(evaluation.action ?? "Allow").toUpperCase();
-  const threat = String(evaluation.threat_level ?? "None").toLowerCase();
+  const action = String(outcome.action ?? "NONE").toUpperCase();
+  const threat = String(outcome.threat_level ?? "NONE").toLowerCase();
   const isExfil = categories.some((c) => /data_leak|leakage|exfil|pii|entity|secret/i.test(c));
 
   // Verdict decision table (spec §5). Prompt-injection stays `flagged` (the
@@ -134,7 +148,7 @@ function mapFindings(raw: any): ScanResult {
   let verdict: Verdict = "clean";
   if (isExfil || (action === "BLOCK" && (threat === "high" || threat === "critical"))) {
     verdict = "blocked";
-  } else if (action === "BLOCK" || action === "REDACT" || evaluation.has_detections || categories.length) {
+  } else if (action === "BLOCK" || action === "REDACT" || action === "DETECT" || categories.length) {
     verdict = "flagged";
   }
   return { verdict, categories, raw };

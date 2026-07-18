@@ -1,0 +1,74 @@
+# OpenShell policy — StoreBuilder worker
+# Spec: openshell-policy.spec.md §4.  Owner: Sky (security lane).
+#
+# StoreBuilder talks to the Shopify Admin API only. It has a live WRITE token, yet
+# still cannot touch customers/orders/pricing — the "non-trivial policy" the
+# NemoClaw/OpenShell bounty rewards (allow-with-boundary, not a global allow).
+# The token is never held by the agent: request_body_credential_rewrite injects
+# SHOPIFY_ADMIN_TOKEN at the gateway from a placeholder.
+#
+# Static sections lock at onboard; network_policies hot-reloads (spec §2).
+
+version: 1
+
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /usr/lib/**
+    - /usr/local/lib/**
+  read_write:
+    - /workspace/**
+    - /tmp
+
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+
+landlock:
+  compatibility: best_effort
+
+network_policies:
+  shopify_admin:
+    name: shopify-admin
+    endpoints:
+      - host: "*.myshopify.com"      # wildcard allowed in first DNS label only
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        # Path-level rules instead of a blunt `access: read-write`. `access` is
+        # mutually exclusive with `rules`, so it is omitted. deny_rules take
+        # precedence over rules (schema §2).
+        rules:
+          # StoreBuilder's job: create/update catalog. Nothing else.
+          - methods: [GET, POST, PUT]
+            path: /admin/api/*/products*
+          - methods: [GET, POST, PUT]
+            path: /admin/api/*/collections*
+          - methods: [GET, POST]
+            path: /admin/api/*/inventory_levels*
+        deny_rules:
+          # PII / financial boundary INSIDE an allowed host — the agent has a live
+          # write token and still cannot touch customers or orders. This is the
+          # line judges can test under pressure: it holds even if the agent is
+          # compromised. deny_rules win over rules above.
+          - path: /admin/api/*/customers*
+          - path: /admin/api/*/orders*
+          - path: /admin/api/*/price_rules*
+          - path: /admin/api/*/gift_cards*
+        # X-Shopify-Access-Token injected at the gateway as
+        # openshell:resolve:env:SHOPIFY_ADMIN_TOKEN — sandbox holds a placeholder.
+        request_body_credential_rewrite: true
+      # Graduated enforcement: fulfillment is read-only AND audit-mode (log, don't
+      # block) — shows the policy makes judgments, not one global switch.
+      - host: "*.myshopify.com"
+        port: 443
+        protocol: rest
+        enforcement: audit
+        rules:
+          - methods: [GET]
+            path: /admin/api/*/fulfillment_orders*
+        request_body_credential_rewrite: true
+    binaries:
+      - path: /usr/local/bin/openclaw
+      - path: /usr/bin/node
+# No Apify endpoint → StoreBuilder cannot reach Apify (least privilege per role).
