@@ -22,7 +22,38 @@ import { bus } from "../bus/bus.js";
 
 export interface Product { title: string; price: number; image?: string }
 
-const RESEARCH_SOURCE = process.env.RESEARCH_SOURCE_URL ?? "https://dummyjson.com/products/category/mens-shoes?limit=10";
+// Research data source, in order of preference:
+//   1. Apify actor (real scrape) when APIFY_TOKEN + APIFY_ACTOR are set
+//   2. RESEARCH_SOURCE_URL if the operator points it at a real feed
+//   3. a labeled sample catalog (never presented as live)
+const APIFY_TOKEN = process.env.APIFY_TOKEN;
+const APIFY_ACTOR = process.env.APIFY_ACTOR; // e.g. "junglee/amazon-crawler"
+const SAMPLE_SOURCE = process.env.RESEARCH_SOURCE_URL ?? "https://dummyjson.com/products/category/mens-shoes?limit=10";
+
+export function researchSourceLabel(): string {
+  if (APIFY_TOKEN && APIFY_ACTOR) return `live Apify scrape (actor ${APIFY_ACTOR})`;
+  if (process.env.RESEARCH_SOURCE_URL) return `operator feed (${process.env.RESEARCH_SOURCE_URL})`;
+  return "sample catalog (set APIFY_TOKEN + APIFY_ACTOR for a live scrape)";
+}
+
+async function fetchProducts(niche: string): Promise<any[]> {
+  if (APIFY_TOKEN && APIFY_ACTOR) {
+    // Apify run-sync-get-dataset-items: runs the actor and returns its dataset.
+    const url = `https://api.apify.com/v2/acts/${APIFY_ACTOR.replace("/", "~")}/run-sync-get-dataset-items?token=${APIFY_TOKEN}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ search: niche, maxItems: 10 }),
+      signal: AbortSignal.timeout(90000),
+    });
+    if (!res.ok) throw new Error(`Apify actor ${APIFY_ACTOR} failed: HTTP ${res.status} ${(await res.text()).slice(0, 150)}`);
+    return await res.json();
+  }
+  const res = await fetch(SAMPLE_SOURCE, { signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error(`source fetch failed: HTTP ${res.status}`);
+  const data: any = await res.json();
+  return data.products ?? data.items ?? (Array.isArray(data) ? data : []);
+}
 
 export function resolveBrain(): ModelBackend | null {
   if (process.env.SIM_MODE === "1") return null;
@@ -73,16 +104,13 @@ export async function gateOrEscalate(agent: AgentRecord, content: string, kind: 
 
 export async function runResearch(agent: AgentRecord, task: Task, niche: string, onProgress: (p: number) => void): Promise<Product[]> {
   onProgress(10);
-  bus.post({ threadId: task.goalId, from: agent.id, kind: "status", body: `Fetching live product data: ${RESEARCH_SOURCE}` });
+  bus.post({ threadId: task.goalId, from: agent.id, kind: "status", body: `Sourcing ${niche} products — ${researchSourceLabel()}` });
 
-  const res = await fetch(RESEARCH_SOURCE, { signal: AbortSignal.timeout(15000) });
-  if (!res.ok) throw new Error(`source fetch failed: HTTP ${res.status}`);
-  const data: any = await res.json();
-  const rawProducts: any[] = data.products ?? data.items ?? [];
+  const rawProducts = await fetchProducts(niche);
   const products: Product[] = rawProducts.slice(0, 10).map((p) => ({
-    title: p.title ?? p.name ?? "unknown",
-    price: Number(p.price ?? 0),
-    image: p.thumbnail ?? p.image,
+    title: p.title ?? p.name ?? p.productName ?? "unknown",
+    price: Number(p.price?.value ?? p.price ?? p.priceValue ?? 0),
+    image: p.thumbnail ?? p.image ?? p.imageUrl ?? p.images?.[0],
   }));
   onProgress(50);
 
@@ -102,7 +130,7 @@ export async function runResearch(agent: AgentRecord, task: Task, niche: string,
   } else {
     const sorted = [...products].sort((a, b) => a.price - b.price);
     const mid = sorted.slice(Math.floor(sorted.length / 3), Math.floor(sorted.length / 3) + 3);
-    summary = `Real data, no-model synthesis (add a key for LLM analysis): ${products.length} live products found, $${sorted[0]?.price}–$${sorted[sorted.length - 1]?.price}. Lead with mid-band: ${mid.map((p) => `${p.title} ($${p.price})`).join(", ")}.`;
+    summary = `${products.length} products from ${researchSourceLabel()}, $${sorted[0]?.price}–$${sorted[sorted.length - 1]?.price}. Rule-based synthesis (add a model key for LLM analysis). Lead with mid-band: ${mid.map((p) => `${p.title} ($${p.price})`).join(", ")}.`;
   }
   onProgress(90);
   bus.post({ threadId: task.goalId, from: agent.id, kind: "finding", body: `Research complete — ${summary}` });

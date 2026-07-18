@@ -48,6 +48,11 @@
     .esc .content { font-size: 0.68rem; color: #9aa5bd; margin: 0.3rem 0; word-break: break-word; }
     .esc .actions { display: flex; gap: 0.5rem; margin-top: 0.4rem; }
     .esc button.approve { border-color: #2f7a4b; }
+    .learning { border: 1px solid #234a6b; background: #0e1c2a; border-radius: 8px; padding: 0.6rem 0.9rem; margin-bottom: 1rem; font-size: 0.72rem; }
+    .learning:empty { display: none; }
+    .learning h3 { margin: 0 0 0.4rem; font-size: 0.72rem; color: #61c3ff; letter-spacing: 0.06em; }
+    .learning .row { color: #9aa5bd; padding: 0.15rem 0; }
+    .learning .faster { color: #5ff59a; }
     .log { font-size: 0.62rem; color: #6b7590; max-height: 4.4rem; overflow-y: auto; margin-top: 0.4rem; }
 
     .chat { border: 1px solid #2a3040; border-radius: 8px; background: #0e131c; display: flex; flex-direction: column; height: calc(100vh - 190px); min-height: 420px; position: sticky; top: 1rem; }
@@ -86,6 +91,7 @@
   </div>
 
   <div id="escalations"></div>
+  <div id="learning" class="learning"></div>
 
   <div class="goalbar">
     <input id="goalInput" placeholder='Give the CEO a goal… e.g. "make me a shopify store"' />
@@ -112,7 +118,7 @@
   <div class="drawer" id="drawer"></div>
 
   <script>
-    const state = { agents: new Map(), tasks: new Map(), goals: new Map(), messages: [], escalations: new Map() };
+    const state = { agents: new Map(), tasks: new Map(), goals: new Map(), messages: [], escalations: new Map(), runs: [] };
     let openAgentId = null;
 
     const $ = (id) => document.getElementById(id);
@@ -159,6 +165,23 @@
     }
     async function resolveEsc(id, verb) {
       await fetch(`/${verb}/${id}`, { method: "POST" });
+    }
+
+    function renderLearning() {
+      const runs = state.runs || [];
+      if (runs.length === 0) { $("learning").innerHTML = ""; return; }
+      const byNiche = {};
+      for (const r of runs) (byNiche[r.nicheKey] = byNiche[r.nicheKey] || []).push(r);
+      const rows = Object.values(byNiche).map(group => {
+        return group.map((r, i) => {
+          const n = i + 1;
+          if (i === 0) return `<div class="row"><b>${esc(r.niche)}</b> · run ${n}: full research, ${r.products.length} findings, total ${r.totalSec}s</div>`;
+          const base = group[0];
+          const saved = Math.max(0, base.totalSec - r.totalSec);
+          return `<div class="row faster">↳ run ${n}: reused ${r.products.length} findings from ${esc(r.reusedFrom||base.runId)} — 0 re-scrapes, 0 research API calls · total ${r.totalSec}s vs ${base.totalSec}s (${saved}s faster)</div>`;
+        }).join("");
+      }).join("");
+      $("learning").innerHTML = `<h3>🧠 RUN MEMORY — learns per niche, gets faster on repeat</h3>${rows}`;
     }
 
     function renderGrid() {
@@ -256,7 +279,7 @@
       input.value = "";
     }
 
-    function renderAll() { renderEscalations(); renderGoals(); renderGrid(); renderChat(); renderSelectors(); if (openAgentId) renderDrawer(); }
+    function renderAll() { renderEscalations(); renderLearning(); renderGoals(); renderGrid(); renderChat(); renderSelectors(); if (openAgentId) renderDrawer(); }
 
     // --- actions ---
     $("goalBtn").onclick = async () => {
@@ -291,6 +314,7 @@
       state.goals = new Map(s.goals.map(g => [g.id, g]));
       state.messages = s.messages;
       state.escalations = new Map((s.escalations || []).map(e => [e.id, e]));
+      state.runs = s.runs || [];
     }
     const es = new EventSource("/events");
     es.onmessage = (ev) => {
@@ -301,6 +325,7 @@
       else if (type === "goal") state.goals.set(data.id, data);
       else if (type === "message") state.messages.push(data);
       else if (type === "escalation") state.escalations.set(data.id, data);
+      else if (type === "run") state.runs.push(data);
       renderAll();
     };
   </script>

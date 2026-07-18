@@ -83,9 +83,20 @@ for a drill-down: its messages, event log, spec/identity, and a box to message
 it directly. `reset demo` clears everything.
 
 **What's real vs simulated (honestly labeled on screen):**
-- **Research agent — REAL.** Makes a live HTTP fetch for product data and
-  synthesizes findings (LLM analysis when a model key is present, deterministic
-  otherwise). Card shows a green **REAL** tag.
+- **Research agent — REAL.** Makes a real HTTP fetch for product data and
+  synthesizes findings (LLM analysis when a model key is present, rule-based
+  otherwise). Card shows a green **REAL** tag and the research message names its
+  source honestly — `sample catalog` / `operator feed` / `live Apify scrape` —
+  so a mock source is never presented as live. Set `APIFY_TOKEN` + `APIFY_ACTOR`
+  for a real scrape.
+- **Run memory / recursive intelligence — REAL.** Every completed goal is
+  written to `data/runs.json`. Launch the same niche twice: run 2 recalls run 1,
+  reuses its findings (0 re-scrapes, 0 research API calls), and the dashboard's
+  Run Memory strip shows the run-over-run delta. The company gets faster at work
+  it has done before.
+- **Role library — REAL.** The CEO hires from `src/roles/library.ts` (store-launch,
+  marketing-agency, market-research playbooks). Adding a role is a library entry,
+  not new orchestrator code.
 - **SecurityGate + escalations — REAL.** Every bus message and worker I/O is
   scanned (heuristic floor always on; HiddenLayer merges in with a key). Click
   **"inject poisoned doc"**: the gate flags prompt-injection + data-exfiltration,

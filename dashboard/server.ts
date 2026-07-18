@@ -24,6 +24,7 @@ registry.on("update", (record) => broadcast("agent", record));
 bus.on("message", (msg) => broadcast("message", msg));
 orchestrator.on("task", (task) => broadcast("task", task));
 orchestrator.on("goal", (goal) => broadcast("goal", goal));
+orchestrator.on("run", (run) => broadcast("run", run));
 escalations.on("escalation", (esc) => broadcast("escalation", esc));
 
 // SecurityGate on the bus: scan every message; annotate detections so the
@@ -101,10 +102,12 @@ createServer(async (req, res) => {
       if (!msgBody?.trim()) return json(res, { error: "body required" }, 400);
       const msg = bus.post({ threadId: threadId || "company", from: from || "user", to, kind: "chat", body: msgBody.trim() });
       json(res, msg);
-    } else if (req.url === "/reset" && req.method === "POST") {
-      orchestrator.reset();
+    } else if (req.url?.startsWith("/reset") && req.method === "POST") {
+      // /reset wipes everything; /reset?keepMemory=1 preserves the learning loop.
+      const keepMemory = req.url.includes("keepMemory");
+      orchestrator.reset(!keepMemory);
       broadcast("snapshot", snapshot());
-      json(res, { ok: true });
+      json(res, { ok: true, keptMemory: keepMemory });
     } else if (req.url?.startsWith("/approve/") && req.method === "POST") {
       const id = req.url.split("/")[2];
       const esc = escalations.resolve(id, "approved");
