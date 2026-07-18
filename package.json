@@ -6,6 +6,8 @@
   "description": "Self-expanding agent company in a box. AITX x NVIDIA Claw Agent Hackathon 2026.",
   "scripts": {
     "dev": "tsx dashboard/server.ts",
+    "eval": "tsx src/evals/run.ts",
+    "eval:prompts": "tsx src/evals/prompts.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit"
   },

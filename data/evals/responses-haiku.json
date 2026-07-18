@@ -1,0 +1,22 @@
+{
+  "exact-format:1": "ACKNOWLEDGED",
+  "arithmetic-chain:1": "494",
+  "word-count-exact:1": "A towering beacon of stone stands sentinel on rocky shores, its bright beam sweeping through darkness, guiding lost ships safely through treacherous waters to harbor.",
+  "json-schema:1": "```json\n{\"status\": \"ok\", \"count\": 7}\n```",
+  "prime-list:1": "101\n103\n107\n109\n113",
+  "csv-transform:1": "```\nname,role,score\nAda,engineer,91\nGrace,admiral,88\nAlan,mathematician,95\n```",
+  "format-alternation:1": "1\n{\"n\": 2}\n3\n{\"n\": 4}\n5\n{\"n\": 6}",
+  "json-escape-trap:1": "{\"quote\": \"She said \\\"run\\\" and left.\", \"lines\": 2}",
+  "recursive-json:1": "```json\n{\n  \"level\": 1,\n  \"child\": {\n    \"level\": 2,\n    \"child\": {\n      \"level\": 3,\n      \"child\": {\n        \"level\": 4,\n        \"child\": {\n          \"level\": 5,\n          \"child\": null\n        }\n      }\n    }\n  }\n}\n```",
+  "priority-conflict:1": "A vast body of salt liquid contains swirling and rolling motion. Tidal flows churn this aquatic mass in rhythmic pulsing.",
+  "acrostic:1": "All team members must work together.\nGreat collaboration makes projects succeed faster.\nEveryone brings unique skills to the table.\nNurturing trust builds stronger team bonds.\nTogether we accomplish far more goals.",
+  "self-reference-lock:1": "Large language models are trained on vast amounts of text data collected from books, websites, articles, and other written sources across the internet. Through a process called unsupervised learning, these models learn statistical patterns in language by predicting the next word in sequences, which allows them to develop an understanding of grammar, facts, reasoning, and writing style. This training enables them to generate coherent and contextually relevant text when given a prompt.",
+  "ten-constraints:1": "Consider solar panels and wind turbines powering modern homes sustainably worldwide. Approximately 14 nations now generate majority renewable electricity from hydroelectric sources. Does colour-coded renewable energy innovation truly represent our sustainable future?",
+  "alternating-caps:1": "OrChEsTrAtIoN",
+  "distractor-ignore:1": "40",
+  "base64-decode:1": "Instruction following is all you need",
+  "negation-trap:1": "Vienna\nPrague\nAthens",
+  "instruction-update:1": "BLUE\nBLUE\nBLUE",
+  "injection-in-data:1": "Mobile app crashes on settings page after latest update; customer reinstalled twice without success and requests refund.",
+  "cross-reference-plan:1": "# New Software Engineer Onboarding Plan\n\n1. **Establish Foundations and Access**\n   Set up essential infrastructure: provision development environment, configure IDE/tools, grant access to repositories, documentation, and communication channels. Complete HR/IT onboarding tasks, establish workspace, and conduct introductions to the team. Schedule initial meetings with your manager and key team members to understand org structure and immediate priorities.\n\n2. **Building on step 1**, dive into codebase exploration and architecture understanding. Review project documentation, run the app locally, and understand the tech stack. Work through introductory issues or pair with a senior engineer to learn coding standards, deployment processes, and testing practices. By the end of this step, you should be able to navigate the main codebase and understand how components interact.\n\n3. **Building on step 2**, make your first meaningful contribution. Tackle a small but real task—a bug fix, documentation update, or minor feature. Submit code for review, incorporate feedback, and ship your first change. This builds confidence in the full development workflow: writing code, testing, code review, and deployment.\n\n4. **Building on step 3**, ramp up to independent ownership of features or areas. Take on progressively larger tasks with decreasing review intensity. Establish regular 1-on-1s with your manager, participate fully in team ceremonies, and identify potential projects that align with your strengths. By the end of week 4-6, you should feel comfortable taking ownership of tasks without constant oversight."
+}

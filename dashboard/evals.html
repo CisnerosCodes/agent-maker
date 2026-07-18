@@ -1,0 +1,98 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Agent Corp — Instruction-Following Ladder</title>
+  <style>
+    body { font-family: ui-monospace, monospace; background: #0b0e14; color: #d6deeb; margin: 2rem; }
+    h1 { font-size: 1.2rem; letter-spacing: 0.1em; }
+    a { color: #61c3ff; text-decoration: none; }
+    .meta { color: #8a93a6; font-size: 0.8rem; margin-bottom: 1rem; }
+    .note { border: 1px solid #4a4030; background: #201c14; color: #c9a86a; font-size: 0.75rem;
+            padding: 0.6rem 0.8rem; border-radius: 8px; margin-bottom: 1rem; max-width: 70rem; }
+    .summary { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
+    .stat { border: 1px solid #2a3040; border-radius: 8px; background: #121722; padding: 0.7rem 1rem; }
+    .stat .n { font-size: 1.3rem; color: #5ff59a; }
+    .stat .l { font-size: 0.65rem; color: #8a93a6; text-transform: uppercase; letter-spacing: 0.08em; }
+    table { border-collapse: collapse; width: 100%; max-width: 70rem; font-size: 0.8rem; }
+    th, td { border: 1px solid #2a3040; padding: 0.45rem 0.7rem; text-align: left; }
+    th { background: #121722; color: #8a93a6; font-weight: normal; }
+    td.pass { color: #5ff59a; } td.fail { color: #ff6b81; } td.partial { color: #f5a623; }
+    tr.tier td.tierlabel { color: #61c3ff; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; }
+    details { margin: 0.2rem 0; }
+    summary { cursor: pointer; color: #8a93a6; font-size: 0.7rem; }
+    pre { background: #0e1314; border: 1px solid #2a3040; border-radius: 6px; padding: 0.5rem;
+          font-size: 0.7rem; white-space: pre-wrap; word-break: break-word; max-height: 14rem; overflow-y: auto; }
+    select { background: #1d2635; color: inherit; border: 1px solid #3a4358; border-radius: 6px; padding: 0.3rem; }
+  </style>
+</head>
+<body>
+  <h1>INSTRUCTION-FOLLOWING LADDER <span style="color:#8a93a6">// AGENT RELIABILITY HARNESS</span></h1>
+  <div class="meta"><a href="/">← org chart</a> &nbsp;·&nbsp; run: <select id="runSel"></select></div>
+  <div id="note" class="note" style="display:none"></div>
+  <div class="summary" id="summary"></div>
+  <div id="matrix"></div>
+
+  <script>
+    let runs = [];
+    let selected = 0;
+
+    function pct(r) { return r === 1 ? "PASS" : r === 0 ? "FAIL" : Math.round(r * 100) + "%"; }
+    function cls(r) { return r === 1 ? "pass" : r === 0 ? "fail" : "partial"; }
+    function esc(s) { return (s || "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+    function render() {
+      const run = runs[selected];
+      const sel = document.getElementById("runSel");
+      sel.innerHTML = runs.map((r, i) => `<option value="${i}" ${i === selected ? "selected" : ""}>${r.id} (${r.backend})</option>`).join("");
+      if (!run) { document.getElementById("matrix").innerHTML = "<p>No eval runs yet. Run: <code>npm run eval</code></p>"; return; }
+
+      const note = document.getElementById("note");
+      note.style.display = run.runnerNote ? "block" : "none";
+      note.textContent = run.runnerNote || "";
+
+      document.getElementById("summary").innerHTML = run.models.map(m => `
+        <div class="stat">
+          <div class="n">${m.cleared}/${m.total}</div>
+          <div class="l">${esc(m.model)} · cleared</div>
+          <div class="l">break: ${m.breakingPoint ? esc(m.breakingPoint) : "none — full clear"}</div>
+          ${m.avgLatencyMs != null ? `<div class="l">avg ${m.avgLatencyMs}ms</div>` : ""}
+        </div>`).join("");
+
+      const nLevels = run.models[0].levels.length;
+      let rows = "";
+      let lastTier = "";
+      for (let i = 0; i < nLevels; i++) {
+        const base = run.models[0].levels[i];
+        if (base.tier !== lastTier) {
+          lastTier = base.tier;
+          rows += `<tr class="tier"><td class="tierlabel" colspan="${2 + run.models.length}">tier: ${base.tier}</td></tr>`;
+        }
+        const cells = run.models.map(m => {
+          const r = m.levels[i];
+          const detail = r.trials.map(t => `<details><summary>trial ${t.trial}: ${t.pass ? "pass" : "fail"}</summary>` +
+            `<pre>${esc(t.notes.join("\n"))}\n---\n${esc(t.response)}</pre></details>`).join("");
+          return `<td class="${cls(r.passRate)}">${pct(r.passRate)}${detail}</td>`;
+        }).join("");
+        rows += `<tr><td>${i + 1}</td><td>${esc(base.title)}</td>${cells}</tr>`;
+      }
+      document.getElementById("matrix").innerHTML =
+        `<table><tr><th>#</th><th>Level</th>${run.models.map(m => `<th>${esc(m.model)}</th>`).join("")}</tr>${rows}</table>`;
+    }
+
+    document.getElementById("runSel").addEventListener("change", (e) => { selected = Number(e.target.value); render(); });
+
+    async function refresh() {
+      try {
+        const res = await fetch("/api/eval-runs");
+        const fresh = await res.json();
+        const changed = JSON.stringify(fresh) !== JSON.stringify(runs);
+        runs = fresh;
+        if (changed) render();
+      } catch {}
+    }
+    refresh();
+    setInterval(refresh, 3000);
+  </script>
+</body>
+</html>

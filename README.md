@@ -5,7 +5,69 @@
 Built for the AITX Community x NVIDIA Claw Agent Hackathon (July 2026).
 Primary track: **Integrating Runtime Security by HiddenLayer**. Co-headline: **Best Use of NemoClaw + OpenShell**.
 
-## How it works
+## Setup (do this first — Alex, this section is for you)
+
+**Prerequisites** (the only things you install by hand):
+
+| Tool | Version | Check | Get it |
+|---|---|---|---|
+| Node.js | 20+ (22 LTS recommended) | `node --version` | https://nodejs.org |
+| npm | comes with Node | `npm --version` | — |
+| git | any recent | `git --version` | https://git-scm.com |
+
+Everything else is a local dev dependency installed by npm — there are **zero runtime dependencies** (pure Node stdlib), so install is fast and can't version-clash.
+
+```bash
+git clone https://github.com/CisnerosCodes/agent-maker.git
+cd agent-maker
+npm install            # installs tsx + typescript + @types/node, that's it
+cp .env.example .env   # fill in whatever tokens you have; everything degrades gracefully
+npm run dev            # dashboard on http://localhost:4000
+```
+
+Open http://localhost:4000 (live org chart) and http://localhost:4000/evals (model eval results — a real run is committed, so this page works immediately).
+
+**Troubleshooting:**
+- `'tsx' is not recognized` → you skipped `npm install`, run it in the repo root.
+- `npm install` fails on old Node → check `node --version` is ≥ 20; on Windows install the LTS from nodejs.org and reopen your terminal.
+- Port 4000 busy → `set DASHBOARD_PORT=4001` (PowerShell: `$env:DASHBOARD_PORT=4001`) then `npm run dev`.
+- Eval `--backend cli` returns 401 → your `claude` CLI login is stale; run `claude` once interactively and sign in, then retry.
+
+## Scripts
+
+```bash
+npm run dev            # dashboard: SSE org chart + /evals report page
+npm run eval           # run the Instruction-Following Ladder (see below)
+npm run eval:prompts   # dump all level prompts as JSON
+npm run typecheck      # tsc --noEmit
+```
+
+## The Instruction-Following Ladder (model eval harness)
+
+`src/evals/` is a 20-level, 5-tier instruction-following benchmark. Every level is auto-graded against a concrete deterministic rule — the goal is to find the exact point where a model stops following precise instructions under pressure, because that point is where a *worker agent* starts corrupting Factory handoffs.
+
+Tiers: **format** → **structured** → **constraint** → **adversarial** → **long-horizon**.
+
+```bash
+# Anthropic API (needs ANTHROPIC_API_KEY in .env):
+npm run eval -- --backend api --models claude-haiku-4-5-20251001,claude-sonnet-5 --trials 3
+
+# Your Claude Code login, no API key needed:
+npm run eval -- --backend cli --models haiku --trials 1
+
+# Nemotron / any OpenAI-compatible endpoint (needs NVIDIA_INFERENCE_API_KEY;
+# point NVIDIA_API_BASE at vLLM to bench a self-hosted model):
+npm run eval -- --backend nvidia --models nvidia/llama-3.1-nemotron-70b-instruct
+
+# Grade pre-collected responses (offline / out-of-band):
+npm run eval -- --backend file --file data/evals/responses-haiku.json --models claude-haiku-4-5
+```
+
+Results land in `data/evals/` as JSON + Markdown and render live at `http://localhost:4000/evals` (page polls every 3s, so you can watch a run fill in). Multiple trials per level give pass *rates*, not just pass/fail; the report includes each model's breaking point and per-trial failure notes.
+
+The `ModelBackend` interface in `src/evals/backends.ts` is the same abstraction the Factory's worker loop uses — if a backend+model clears the ladder, that exact backend+model is demo-safe for workers.
+
+## How the company works
 
 1. You message the CEO agent in Slack: *"Launch a Shopify store for trending shoes."*
 2. The **CEO** (runs on [troublemaker](https://github.com/tinyfatco/troublemaker): heartbeat events, persistent memory, Slack adapter) decomposes the goal into roles.
@@ -18,7 +80,7 @@ Slack ──► CEO (troublemaker) ──► Factory ──► NemoClaw workers 
                 │                   │                │
                 └── SecurityGate (HiddenLayer) wraps all model I/O
                                     │
-                              Dashboard (SSE)
+                              Dashboard (SSE) + /evals
 ```
 
 ## Repo layout
@@ -30,25 +92,17 @@ src/
   vault/          Credential vault: pre-provisioned identities and scoped keys
   security/       SecurityGate: HiddenLayer wrapper, detection routing policy
   registry/       Agent registry: who exists, status, lineage
-dashboard/        SSE server + single-page org chart with approvals
+  evals/          Instruction-Following Ladder: levels, graders, model backends, runner
+dashboard/        SSE server + org chart + /evals report page
 policies/         OpenShell policy YAML per worker role
-docs/             Plan, demo script, submission write-ups
+docs/             ORCHESTRATION.md (build order) + submission write-ups
+data/evals/       Committed eval runs (responses + graded reports)
 ```
 
-## Quickstart (team)
-
-```bash
-git clone https://github.com/CisnerosCodes/agent-maker.git
-cd agent-maker
-npm install
-cp .env.example .env   # fill in tokens
-npm run dev            # starts registry + dashboard; CEO runs via troublemaker
-```
-
-See `PLAN.md` for the full battle plan and `KICKOFF_PROMPT.md` to point a coding agent at this repo.
+See `PLAN.md` for the battle plan, `docs/ORCHESTRATION.md` for the implementation order, and `KICKOFF_PROMPT.md` to point a coding agent at this repo.
 
 ## Team
 
-- **Adrian** — orchestration: CEO harness, Factory, Vault, Slack, dashboard
+- **Adrian** — orchestration: CEO harness, Factory, Vault, Slack, dashboard, evals
 - **Sky** — security: NemoClaw, OpenShell policies, HiddenLayer instrumentation, red-team demo
-- **Alex** — (if joining) dashboard UI, demo script, submissions
+- **Alex** — dashboard UI, demo script, submissions
