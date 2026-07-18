@@ -41,6 +41,7 @@ export interface LevelResult {
 export interface ModelRun {
   model: string;
   backend: string;
+  cached?: string;        // run id this result was reused from (model-cache hit)
   levels: LevelResult[];
   cleared: number;        // levels with passRate === 1
   total: number;

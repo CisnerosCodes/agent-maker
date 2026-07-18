@@ -84,6 +84,35 @@ exact backend+model is demo-safe.
 - Log per-run timings/errors in `data/runs.json`; second store-launch vs first
   is the submission evidence.
 
+## Go-live checklist (each item flips one worker/layer from sim to real)
+
+The code paths are built and default to sim when a dependency is missing. Add
+the key/box and the dashboard label flips REAL automatically — no code change.
+
+1. **Research worker — REAL NOW.** Fetches live product data over HTTP and
+   synthesizes findings (deterministic if no model key; LLM analysis when a
+   brain is available). Set `RESEARCH_SOURCE_URL` to an Apify actor dataset
+   URL to swap the demo source for a real scrape.
+2. **HiddenLayer on the bus + escalation loop — REAL NOW (heuristic floor).**
+   `bus.on(message)` scans every inter-agent message; worker ingestion/prompt/
+   response/tool-call all pass through `gateOrEscalate`. Flagged content raises
+   a resolvable escalation; approve/deny endpoints resolve it. Add
+   `HIDDENLAYER_API_KEY` and the real HL detections merge in on top of the
+   heuristics (Sky: finish `hlScan`/`mapFindings` schema mapping in gate.ts).
+   Demo the climax with the **"inject poisoned doc"** button.
+3. **Shopify — REAL when `SHOPIFY_ADMIN_TOKEN` + `SHOPIFY_STORE_URL` set.**
+   Builder POSTs 3 products to the Admin API; the real store URL becomes the
+   goal deliverable. Until then it runs labeled SIMULATION.
+4. **Nemotron — REAL when `NVIDIA_INFERENCE_API_KEY` set + `WORKER_BACKEND=nvidia`.**
+   Worker inference routes through the NVIDIA OpenAI-compatible endpoint. Run
+   one ladder pass for the bounty write-up:
+   `npm run eval -- --backend nvidia --models nvidia/llama-3.1-nemotron-70b-instruct`
+5. **NemoClaw sandbox (Sky's box) — the one contained worker.** Factory step 3
+   currently marks the sandbox in-registry; wire the real `nemoclaw onboard`
+   spawn and mount the rendered policy (`policies/rendered/<agent>.yaml`, now
+   actually written). The research policy already declares `deny evil.example`
+   egress — that's the "blocks the exfil attempt" moment for the NemoClaw judges.
+
 ## Testing the orchestration itself
 
 The eval harness doubles as the orchestration's regression suite: after wiring

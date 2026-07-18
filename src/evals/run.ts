@@ -17,7 +17,7 @@
 //   --note    "..."                 runner caveat recorded in the report
 //   --out     dir                   output dir (default data/evals)
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getLevels } from "./levels.js";
 import { makeBackend } from "./backends.js";
@@ -139,10 +139,28 @@ async function main() {
   };
 
   console.log(`Ladder: ${levels.length} levels x ${trials} trial(s) x ${models.length} model(s) via backend "${backendKind}"`);
+  // Model cache: never re-spend tokens on a model we've already laddered.
+  // Only NEW models actually run; known ones reuse their stored result.
+  // Bypass with --force. The free "file" backend always runs (it costs nothing).
+  const cachePath = join(outDir, "model-cache.json");
+  const cache: Record<string, ModelRun> = existsSync(cachePath) ? JSON.parse(readFileSync(cachePath, "utf8")) : {};
+  const fullLadder = !args.levels; // only cache complete-ladder runs
+
   for (let i = 0; i < models.length; i++) {
-    console.log(`\n=== ${models[i]} ===`);
-    run.models.push(await runModel(backendFor(i), models[i], levels, trials, concurrency));
+    const model = models[i];
+    const hit = cache[model];
+    if (hit && backendKind !== "file" && !args.force) {
+      console.log(`\n=== ${model} === cached from ${hit.cached ?? "earlier run"} — skipping (use --force to re-test)`);
+      run.models.push(hit);
+      continue;
+    }
+    console.log(`\n=== ${model} ===`);
+    const result = await runModel(backendFor(i), model, levels, trials, concurrency);
+    run.models.push(result);
+    if (fullLadder) cache[model] = { ...result, cached: run.id };
   }
+  mkdirSync(outDir, { recursive: true });
+  writeFileSync(cachePath, JSON.stringify(cache, null, 2));
   run.finishedAt = new Date().toISOString();
 
   mkdirSync(outDir, { recursive: true });

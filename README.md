@@ -67,6 +67,41 @@ Results land in `data/evals/` as JSON + Markdown and render live at `http://loca
 
 The `ModelBackend` interface in `src/evals/backends.ts` is the same abstraction the Factory's worker loop uses — if a backend+model clears the ladder, that exact backend+model is demo-safe for workers.
 
+## Run the live demo (offline, no keys needed)
+
+```bash
+npm run dev        # then open http://localhost:4000
+```
+
+Type a goal — `make me a shopify store` — and hit Launch. The CEO asks a
+clarifying question ("which niche, how many products?"); answer in the chat.
+It then drafts the org, the Factory provisions each worker (identity → policy
+→ sandbox, all visible in the event log), and the dashboard shows per-agent
+progress bars with ETAs, dependency ordering (builder waits on research), and
+the agents talking to each other in the company channel. Click any agent card
+for a drill-down: its messages, event log, spec/identity, and a box to message
+it directly. `reset demo` clears everything.
+
+**What's real vs simulated (honestly labeled on screen):**
+- **Research agent — REAL.** Makes a live HTTP fetch for product data and
+  synthesizes findings (LLM analysis when a model key is present, deterministic
+  otherwise). Card shows a green **REAL** tag.
+- **SecurityGate + escalations — REAL.** Every bus message and worker I/O is
+  scanned (heuristic floor always on; HiddenLayer merges in with a key). Click
+  **"inject poisoned doc"**: the gate flags prompt-injection + data-exfiltration,
+  the research agent goes `blocked`, and an approve/deny banner appears — deny it
+  and the defense-in-depth message notes the OpenShell policy blocks the exfil
+  host independently. This is money-demo #2.
+- **Store-builder — REAL when `SHOPIFY_ADMIN_TOKEN` + `SHOPIFY_STORE_URL` are
+  set** (POSTs 3 products to the Admin API); otherwise labeled **SIMULATION**.
+- **Nemotron inference — REAL with `NVIDIA_INFERENCE_API_KEY` +
+  `WORKER_BACKEND=nvidia`.** `SIM_MODE=1` forces everything to sim as stage
+  insurance.
+
+See `docs/IMPROVEMENTS.md` for why the message bus (not Slack) is the company's
+spine, and `docs/ORCHESTRATION.md` → "Go-live checklist" for flipping each
+worker/layer from sim to real.
+
 ## How the company works
 
 1. You message the CEO agent in Slack: *"Launch a Shopify store for trending shoes."*

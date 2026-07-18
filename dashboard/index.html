@@ -4,48 +4,304 @@
   <meta charset="utf-8" />
   <title>Agent Corp — Live</title>
   <style>
-    body { font-family: ui-monospace, monospace; background: #0b0e14; color: #d6deeb; margin: 2rem; }
-    h1 { font-size: 1.2rem; letter-spacing: 0.1em; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
-    .card { border: 1px solid #2a3040; border-radius: 8px; padding: 1rem; background: #121722; }
+    * { box-sizing: border-box; }
+    body { font-family: ui-monospace, monospace; background: #0b0e14; color: #d6deeb; margin: 0; padding: 1.2rem 1.5rem; }
+    h1 { font-size: 1.05rem; letter-spacing: 0.1em; margin: 0; }
+    a { color: #61c3ff; text-decoration: none; }
+    button { background: #1d2635; color: inherit; border: 1px solid #3a4358; border-radius: 6px; padding: 0.35rem 0.8rem; cursor: pointer; font-family: inherit; }
+    button:hover { background: #263349; }
+    button.deny { border-color: #7a2030; }
+    input, select { background: #10151f; color: inherit; border: 1px solid #2a3040; border-radius: 6px; padding: 0.45rem 0.6rem; font-family: inherit; font-size: 0.8rem; }
+
+    .topbar { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
+    .topbar .spacer { flex: 1; }
+    .goalbar { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+    .goalbar input { flex: 1; }
+    .goalstrip { font-size: 0.72rem; color: #8a93a6; margin-bottom: 0.8rem; }
+    .goalstrip b { color: #f5a623; }
+
+    .layout { display: grid; grid-template-columns: 1.4fr 1fr; gap: 1rem; align-items: start; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.8rem; }
+    .card { border: 1px solid #2a3040; border-radius: 8px; padding: 0.8rem; background: #121722; cursor: pointer; }
+    .card:hover { border-color: #3a4a66; }
     .card.ceo { border-color: #f5a623; }
-    .status { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.75rem; }
+    .card .role { font-size: 0.62rem; color: #61c3ff; text-transform: uppercase; letter-spacing: 0.08em; }
+    .card .email { font-size: 0.68rem; color: #8a93a6; }
+    .card .objective { font-size: 0.72rem; margin: 0.3rem 0; color: #b8c2d6; }
+    .status { display: inline-block; padding: 0.05rem 0.5rem; border-radius: 999px; font-size: 0.68rem; }
     .working { background: #123c22; color: #5ff59a; }
     .blocked { background: #4a1220; color: #ff6b81; }
     .provisioning, .starting { background: #103046; color: #61c3ff; }
+    .waiting { background: #2a2a12; color: #d9d26a; }
     .done { background: #1e2a12; color: #b8e986; }
-    .log { font-size: 0.7rem; color: #8a93a6; max-height: 8rem; overflow-y: auto; margin-top: 0.5rem; }
-    button { background: #1d2635; color: inherit; border: 1px solid #3a4358; border-radius: 6px; padding: 0.3rem 0.8rem; cursor: pointer; }
-    button.deny { border-color: #7a2030; }
+    .failed, .terminated { background: #4a1220; color: #ff6b81; }
+
+    .bar { height: 7px; border-radius: 4px; background: #1d2635; margin-top: 0.45rem; overflow: hidden; }
+    .bar > div { height: 100%; background: linear-gradient(90deg, #2f7a4b, #5ff59a); transition: width 0.6s ease; }
+    .eta { font-size: 0.65rem; color: #8a93a6; margin-top: 0.25rem; }
+    .mode { font-size: 0.58rem; padding: 0.02rem 0.4rem; border-radius: 4px; margin-left: 0.4rem; letter-spacing: 0.05em; }
+    .mode.real { background: #0f2e1c; color: #5ff59a; border: 1px solid #2f7a4b; }
+    .mode.sim { background: #2e2410; color: #d9a441; border: 1px solid #6b5220; }
+    .esc { border: 1px solid #7a2030; background: #22101a; border-radius: 8px; padding: 0.7rem 0.9rem; margin-bottom: 1rem; }
+    .esc h3 { margin: 0 0 0.3rem; font-size: 0.78rem; color: #ff8a9b; letter-spacing: 0.06em; }
+    .esc .cats { font-size: 0.68rem; color: #ffb3bf; }
+    .esc .content { font-size: 0.68rem; color: #9aa5bd; margin: 0.3rem 0; word-break: break-word; }
+    .esc .actions { display: flex; gap: 0.5rem; margin-top: 0.4rem; }
+    .esc button.approve { border-color: #2f7a4b; }
+    .log { font-size: 0.62rem; color: #6b7590; max-height: 4.4rem; overflow-y: auto; margin-top: 0.4rem; }
+
+    .chat { border: 1px solid #2a3040; border-radius: 8px; background: #0e131c; display: flex; flex-direction: column; height: calc(100vh - 190px); min-height: 420px; position: sticky; top: 1rem; }
+    .chat h2 { font-size: 0.72rem; letter-spacing: 0.1em; color: #8a93a6; margin: 0; padding: 0.7rem 0.9rem; border-bottom: 1px solid #1d2635; display: flex; gap: 0.6rem; align-items: center; }
+    .chat h2 select { font-size: 0.7rem; padding: 0.2rem 0.4rem; }
+    .msgs { flex: 1; overflow-y: auto; padding: 0.8rem 0.9rem; display: flex; flex-direction: column; gap: 0.55rem; }
+    .msg { font-size: 0.74rem; line-height: 1.4; }
+    .msg .who { color: #61c3ff; }
+    .msg .who.user { color: #f5a623; }
+    .msg .who.ceo { color: #e8b866; }
+    .msg .arrow { color: #4a5570; }
+    .msg .thread { color: #4a5570; font-size: 0.62rem; }
+    .msg.question .body { color: #ffd479; }
+    .msg.finding .body { color: #9be9b8; }
+    .msg.status .body { color: #8a93a6; }
+    .composer { display: flex; gap: 0.4rem; padding: 0.7rem 0.9rem; border-top: 1px solid #1d2635; }
+    .composer input { flex: 1; }
+
+    .drawer-back { position: fixed; inset: 0; background: rgba(4,6,10,0.6); display: none; }
+    .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 92vw); background: #0e131c; border-left: 1px solid #2a3040; padding: 1.2rem; overflow-y: auto; display: none; }
+    .drawer.open, .drawer-back.open { display: block; }
+    .drawer h2 { margin-top: 0; font-size: 0.95rem; }
+    .drawer pre { background: #0b0e14; border: 1px solid #1d2635; border-radius: 6px; padding: 0.6rem; font-size: 0.68rem; white-space: pre-wrap; word-break: break-word; max-height: 16rem; overflow-y: auto; }
+    .drawer .section { font-size: 0.68rem; color: #8a93a6; text-transform: uppercase; letter-spacing: 0.1em; margin: 1rem 0 0.3rem; }
+    .drawer .dlog { font-size: 0.7rem; color: #9aa5bd; }
+    .drawer .dlog div { padding: 0.15rem 0; border-bottom: 1px dashed #1a2130; }
   </style>
 </head>
 <body>
-  <h1>AGENT CORP — LIVE ORG CHART <a href="/evals" style="color:#61c3ff;font-size:0.8rem;text-decoration:none">→ model evals</a></h1>
-  <div class="grid" id="grid"></div>
+  <div class="topbar">
+    <h1>AGENT CORP — LIVE</h1>
+    <a href="/evals">→ model evals</a>
+    <div class="spacer"></div>
+    <button id="attackBtn" class="deny">inject poisoned doc</button>
+    <button id="resetBtn" class="deny">reset demo</button>
+  </div>
+
+  <div id="escalations"></div>
+
+  <div class="goalbar">
+    <input id="goalInput" placeholder='Give the CEO a goal… e.g. "make me a shopify store"' />
+    <button id="goalBtn">Launch goal</button>
+  </div>
+  <div class="goalstrip" id="goalstrip"></div>
+
+  <div class="layout">
+    <div class="grid" id="grid"></div>
+    <div class="chat">
+      <h2>COMPANY CHANNEL
+        <select id="threadFilter"><option value="all">all threads</option></select>
+      </h2>
+      <div class="msgs" id="msgs"></div>
+      <div class="composer">
+        <select id="msgTarget"><option value="">→ CEO / company</option></select>
+        <input id="msgInput" placeholder="Message the company…" />
+        <button id="msgBtn">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="drawer-back" id="drawerBack"></div>
+  <div class="drawer" id="drawer"></div>
+
   <script>
-    const agents = new Map();
-    const grid = document.getElementById("grid");
-    function render() {
+    const state = { agents: new Map(), tasks: new Map(), goals: new Map(), messages: [], escalations: new Map() };
+    let openAgentId = null;
+
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => (s ?? "").toString().replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+    function taskFor(agentId) {
+      for (const t of state.tasks.values()) if (t.agentId === agentId) return t;
+      return null;
+    }
+
+    function etaText(t) {
+      if (t.status === "done") {
+        const secs = t.startedAt && t.finishedAt ? Math.round((new Date(t.finishedAt) - new Date(t.startedAt)) / 1000) : null;
+        return secs != null ? `done in ${secs}s (est ${t.estimateSec}s)` : "done";
+      }
+      if (t.status === "pending") return `queued · est ${t.estimateSec}s`;
+      const remaining = Math.max(1, Math.round(t.estimateSec * (1 - t.progress / 100)));
+      return `${Math.round(t.progress)}% · ~${remaining}s left · est ${t.estimateSec}s`;
+    }
+
+    function renderGoals() {
+      const goals = [...state.goals.values()];
+      $("goalstrip").innerHTML = goals.map(g => {
+        const tasks = [...state.tasks.values()].filter(t => t.goalId === g.id);
+        const doneN = tasks.filter(t => t.status === "done").length;
+        const est = tasks.reduce((s, t) => s + t.estimateSec, 0);
+        const deliverable = g.deliverable ? ` · <a href="${esc(g.deliverable)}" target="_blank">${esc(g.deliverable)}</a>` : "";
+        return `<div><b>${esc(g.id)}</b> [${esc(g.status)}] ${esc(g.text)} · tasks ${doneN}/${tasks.length} · est ${est}s${deliverable}</div>`;
+      }).join("");
+    }
+
+    function renderEscalations() {
+      const pending = [...state.escalations.values()].filter(e => !e.resolved);
+      $("escalations").innerHTML = pending.map(e => `
+        <div class="esc">
+          <h3>⚠ SECURITY ESCALATION ${esc(e.id)} — ${esc(e.agentId)} blocked, awaiting your decision</h3>
+          <div class="cats">detections: ${esc((e.scan?.categories || []).join(", "))}</div>
+          <div class="content">${esc(e.reason)} · "${esc((e.content||"").slice(0,220))}"</div>
+          <div class="actions">
+            <button class="approve" onclick="resolveEsc('${esc(e.id)}','approve')">Approve</button>
+            <button class="deny" onclick="resolveEsc('${esc(e.id)}','deny')">Deny</button>
+          </div>
+        </div>`).join("");
+    }
+    async function resolveEsc(id, verb) {
+      await fetch(`/${verb}/${id}`, { method: "POST" });
+    }
+
+    function renderGrid() {
+      const grid = $("grid");
       grid.innerHTML = "";
-      for (const a of agents.values()) {
+      for (const a of state.agents.values()) {
+        const t = taskFor(a.id);
         const card = document.createElement("div");
         card.className = "card" + (a.spec?.role === "ceo" ? " ceo" : "");
+        card.onclick = () => openDrawer(a.id);
+        const modeTag = t?.mode ? `<span class="mode ${t.mode}">${t.mode === "sim" ? "SIMULATION" : "REAL"}</span>` : "";
         card.innerHTML = `
-          <strong>${a.id}</strong> <span class="status ${a.status}">${a.status}</span>
-          <div>${a.identity?.email ?? ""}</div>
-          <div>${a.spec?.objective ?? ""}</div>
-          ${a.status === "blocked" ? `<button onclick="fetch('/approve/${a.id}',{method:'POST'})">Approve</button>
-             <button class="deny" onclick="fetch('/deny/${a.id}',{method:'POST'})">Deny</button>` : ""}
-          <div class="log">${(a.log ?? []).slice(-6).map(e => `${e.ts.slice(11,19)} ${e.message}`).join("<br>")}</div>`;
+          <div class="role">${esc(a.spec?.role)}${modeTag}</div>
+          <strong>${esc(a.id)}</strong> <span class="status ${esc(a.status)}">${esc(a.status)}</span>
+          <div class="email">${esc(a.identity?.email ?? "")}</div>
+          <div class="objective">${esc(a.spec?.objective ?? "")}</div>
+          ${t ? `<div class="bar"><div style="width:${t.progress}%"></div></div><div class="eta">${esc(etaText(t))}</div>` : ""}
+          ${a.status === "blocked" ? `<button onclick="event.stopPropagation();fetch('/approve/${a.id}',{method:'POST'})">Approve</button>
+             <button class="deny" onclick="event.stopPropagation();fetch('/deny/${a.id}',{method:'POST'})">Deny</button>` : ""}
+          <div class="log">${(a.log ?? []).slice(-4).map(e => `${e.ts.slice(11,19)} ${esc(e.message)}`).join("<br>")}</div>`;
         grid.appendChild(card);
       }
     }
+
+    function renderChat() {
+      const filter = $("threadFilter").value;
+      const msgs = state.messages.filter(m => filter === "all" || m.threadId === filter);
+      const el = $("msgs");
+      const stick = el.scrollTop + el.clientHeight >= el.scrollHeight - 40;
+      el.innerHTML = msgs.map(m => `
+        <div class="msg ${esc(m.kind)}">
+          <span class="thread">[${esc(m.threadId)}]</span>
+          <span class="who ${esc(m.from)}">${esc(m.from)}</span>${m.to ? `<span class="arrow"> → ${esc(m.to)}</span>` : ""}:
+          <span class="body">${esc(m.body)}</span>
+        </div>`).join("");
+      if (stick) el.scrollTop = el.scrollHeight;
+    }
+
+    function renderSelectors() {
+      const threads = [...new Set(state.messages.map(m => m.threadId))];
+      const tf = $("threadFilter");
+      const cur = tf.value;
+      tf.innerHTML = `<option value="all">all threads</option>` + threads.map(t => `<option ${t===cur?"selected":""} value="${esc(t)}">${esc(t)}</option>`).join("");
+      const mt = $("msgTarget");
+      const curT = mt.value;
+      const agents = [...state.agents.values()].filter(a => a.spec?.role !== "ceo");
+      mt.innerHTML = `<option value="">→ CEO / company</option>` + agents.map(a => `<option ${a.id===curT?"selected":""} value="${esc(a.id)}">→ ${esc(a.id)}</option>`).join("");
+    }
+
+    function openDrawer(agentId) {
+      openAgentId = agentId;
+      renderDrawer();
+      $("drawer").classList.add("open");
+      $("drawerBack").classList.add("open");
+    }
+
+    function renderDrawer() {
+      if (!openAgentId) return;
+      const a = state.agents.get(openAgentId);
+      if (!a) return;
+      const t = taskFor(a.id);
+      const msgs = state.messages.filter(m => m.from === a.id || m.to === a.id);
+      $("drawer").innerHTML = `
+        <button style="float:right" onclick="closeDrawer()">close</button>
+        <h2>${esc(a.id)} <span class="status ${esc(a.status)}">${esc(a.status)}</span></h2>
+        <div class="email">${esc(a.identity?.email ?? "")} · spawned by ${esc(a.parent)}</div>
+        ${t ? `<div class="bar"><div style="width:${t.progress}%"></div></div><div class="eta">${esc(t.title)} — ${esc(etaText(t))}</div>` : ""}
+        <div class="section">objective</div>
+        <div class="objective">${esc(a.spec?.objective)}</div>
+        <div class="section">messages (${msgs.length})</div>
+        ${msgs.map(m => `<div class="msg ${esc(m.kind)}"><span class="who ${esc(m.from)}">${esc(m.from)}</span>${m.to ? ` <span class="arrow">→ ${esc(m.to)}</span>` : ""}: <span class="body">${esc(m.body)}</span></div>`).join("") || '<div class="dlog">none yet</div>'}
+        <div class="composer" style="padding:0.6rem 0">
+          <input id="drawerMsg" placeholder="Message ${esc(a.id)} directly…" />
+          <button onclick="sendDrawerMsg('${esc(a.id)}')">Send</button>
+        </div>
+        <div class="section">event log</div>
+        <div class="dlog">${(a.log ?? []).map(e => `<div>${e.ts.slice(11,19)} [${esc(e.kind)}] ${esc(e.message)}</div>`).join("")}</div>
+        <div class="section">spec · identity</div>
+        <pre>${esc(JSON.stringify({ spec: a.spec, identity: a.identity, sandbox: a.sandbox }, null, 2))}</pre>`;
+    }
+
+    function closeDrawer() {
+      openAgentId = null;
+      $("drawer").classList.remove("open");
+      $("drawerBack").classList.remove("open");
+    }
+    $("drawerBack").onclick = closeDrawer;
+
+    async function sendDrawerMsg(agentId) {
+      const input = $("drawerMsg");
+      if (!input.value.trim()) return;
+      const t = taskFor(agentId);
+      await fetch("/message", { method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ threadId: t ? t.goalId : "company", to: agentId, body: input.value }) });
+      input.value = "";
+    }
+
+    function renderAll() { renderEscalations(); renderGoals(); renderGrid(); renderChat(); renderSelectors(); if (openAgentId) renderDrawer(); }
+
+    // --- actions ---
+    $("goalBtn").onclick = async () => {
+      const text = $("goalInput").value.trim();
+      if (!text) return;
+      $("goalInput").value = "";
+      await fetch("/goal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ text }) });
+    };
+    $("goalInput").addEventListener("keydown", e => { if (e.key === "Enter") $("goalBtn").click(); });
+
+    $("msgBtn").onclick = async () => {
+      const input = $("msgInput");
+      if (!input.value.trim()) return;
+      const to = $("msgTarget").value || undefined;
+      // Reply into the most recent active goal thread if one exists, else company.
+      const goals = [...state.goals.values()];
+      const active = goals.reverse().find(g => ["clarifying","planning","running"].includes(g.status));
+      const threadId = to ? (taskFor(to)?.goalId ?? "company") : (active ? active.threadId : "company");
+      await fetch("/message", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ threadId, to, body: input.value }) });
+      input.value = "";
+    };
+    $("msgInput").addEventListener("keydown", e => { if (e.key === "Enter") $("msgBtn").click(); });
+
+    $("resetBtn").onclick = async () => { await fetch("/reset", { method: "POST" }); };
+    $("attackBtn").onclick = async () => { await fetch("/attack", { method: "POST", headers: {"Content-Type":"application/json"}, body: "{}" }); };
+    $("threadFilter").addEventListener("change", renderChat);
+
+    // --- SSE ---
+    function applySnapshot(s) {
+      state.agents = new Map(s.agents.map(a => [a.id, a]));
+      state.tasks = new Map(s.tasks.map(t => [t.id, t]));
+      state.goals = new Map(s.goals.map(g => [g.id, g]));
+      state.messages = s.messages;
+      state.escalations = new Map((s.escalations || []).map(e => [e.id, e]));
+    }
     const es = new EventSource("/events");
     es.onmessage = (ev) => {
-      const data = JSON.parse(ev.data);
-      if (data.snapshot) for (const a of data.snapshot) agents.set(a.id, a);
-      else agents.set(data.id, data);
-      render();
+      const { type, data } = JSON.parse(ev.data);
+      if (type === "snapshot") applySnapshot(data);
+      else if (type === "agent") state.agents.set(data.id, data);
+      else if (type === "task") state.tasks.set(data.id, data);
+      else if (type === "goal") state.goals.set(data.id, data);
+      else if (type === "message") state.messages.push(data);
+      else if (type === "escalation") state.escalations.set(data.id, data);
+      renderAll();
     };
   </script>
 </body>

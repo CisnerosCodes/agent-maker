@@ -49,6 +49,45 @@ export interface AgentEvent {
   data?: unknown;
 }
 
+// --- Message bus (the company's spine; Slack/dashboard are adapters) ---
+
+export interface BusMessage {
+  id: string;
+  ts: string;
+  threadId: string;          // "company" or a goal thread id
+  from: string;              // "user" | "ceo" | agent id
+  to?: string;               // optional direct recipient
+  kind: "chat" | "status" | "question" | "finding" | "system";
+  body: string;
+}
+
+// --- Goals & tasks (what the dashboard's progress view renders) ---
+
+export interface Goal {
+  id: string;
+  text: string;
+  status: "clarifying" | "planning" | "running" | "done" | "failed";
+  threadId: string;
+  createdAt: string;
+  deliverable?: string;      // e.g. the store URL
+}
+
+export interface Task {
+  id: string;
+  goalId: string;
+  title: string;
+  agentId?: string;
+  status: "pending" | "running" | "done" | "failed";
+  progress: number;          // 0-100
+  estimateSec: number;
+  dependsOn: string[];       // task ids that must be done first
+  startedAt?: string;
+  finishedAt?: string;
+  mode?: "real" | "sim";     // real = model/tool-backed; sim = staged (labeled on the dashboard)
+  output?: string;           // human-readable result summary
+  outputData?: unknown;      // structured result handed to dependent tasks
+}
+
 // --- SecurityGate ---
 
 export type Verdict = "clean" | "flagged" | "blocked";
