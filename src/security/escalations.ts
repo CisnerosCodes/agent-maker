@@ -26,12 +26,16 @@ class Escalations extends EventEmitter {
     return { escalation, decision };
   }
 
+  // `id` may be an escalation id (esc-…) OR an agent id. The dashboard buttons
+  // send the agent id, so fall back to that agent's newest pending escalation.
   resolve(id: string, verdict: "approved" | "denied"): Escalation | undefined {
-    const escalation = this.items.get(id);
+    const escalation =
+      this.items.get(id) ??
+      [...this.items.values()].reverse().find((e) => e.agentId === id && !e.resolved);
     if (!escalation || escalation.resolved) return escalation;
     escalation.resolved = verdict;
-    this.resolvers.get(id)?.(verdict);
-    this.resolvers.delete(id);
+    this.resolvers.get(escalation.id)?.(verdict);
+    this.resolvers.delete(escalation.id);
     this.emit("escalation", escalation);
     return escalation;
   }

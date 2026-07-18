@@ -84,6 +84,18 @@ export function resolveBrain(): ModelBackend | null {
   // An explicit WORKER_BACKEND with no matching key must NOT construct a
   // backend around an undefined key (that crashed mid-task with a cryptic
   // 401). Fall back to sim, loudly.
+  // Featherless first: when no explicit pick, its key wins the auto-detect so a
+  // demo only needs FEATHERLESS_API_KEY pasted. Reuses the OpenAI-compat class.
+  if (pick === "featherless" || (!pick && process.env.FEATHERLESS_API_KEY)) {
+    if (process.env.FEATHERLESS_API_KEY)
+      return new OpenAICompatBackend(
+        process.env.FEATHERLESS_API_KEY,
+        process.env.FEATHERLESS_API_BASE ?? "https://api.featherless.ai/v1",
+        "featherless",
+      );
+    warnBrainOnce("WORKER_BACKEND=featherless but FEATHERLESS_API_KEY is not set — workers fall back to simulation. Paste the key in Connections or unset WORKER_BACKEND.");
+    return null;
+  }
   if (pick === "api") {
     if (process.env.ANTHROPIC_API_KEY) return new AnthropicApiBackend(process.env.ANTHROPIC_API_KEY);
     warnBrainOnce("WORKER_BACKEND=api but ANTHROPIC_API_KEY is not set — workers fall back to simulation. Paste the key in Connections or unset WORKER_BACKEND.");
@@ -239,5 +251,8 @@ export async function runCopywriter(agent: AgentRecord, task: Task, niche: strin
 function modelFor(brain: ModelBackend): string {
   if (brain.name === "api") return process.env.WORKER_MODEL ?? "claude-haiku-4-5-20251001";
   if (brain.name === "nvidia") return process.env.WORKER_MODEL ?? "nvidia/llama-3.1-nemotron-70b-instruct";
+  // Cheapest Featherless Nemotron (input $0.05/M, output $0.20/M) for testing.
+  // Swap to nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16 (or set WORKER_MODEL) for the demo.
+  if (brain.name === "featherless") return process.env.WORKER_MODEL ?? "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16";
   return process.env.WORKER_MODEL ?? "haiku";
 }

@@ -91,6 +91,16 @@ export const INTEGRATIONS: Integration[] = [
     priority: 2,
   },
   {
+    id: "brain-featherless",
+    label: "AI brain (Featherless AI)",
+    unlocks: "Same as the other brains, on Featherless-hosted Nemotron models. When connected, workers prefer it automatically.",
+    link: "https://featherless.ai",
+    hint: "Sign in, create an API key. Hackathon usage tokens apply here.",
+    keys: ["FEATHERLESS_API_KEY"],
+    roles: ["copywriter", "strategist", "analyst"],
+    priority: 2,
+  },
+  {
     id: "shopify",
     label: "Shopify store",
     unlocks: "The store-builder creates real products in YOUR store — the store link at the end becomes real.",

@@ -29,6 +29,19 @@ before scale or if time allows. **P2** = hygiene / honesty polish.
 **Fix:** add an optional timeout to the escalation decision (e.g. `ESCALATION_TIMEOUT_MS`, default off for dev, ON for demo). On timeout → resolve as `denied` (fail-closed) and post a bus line "escalation auto-denied after Ns — content quarantined." First resolution still wins (escalations.ts already guards `resolved`).
 **Owner:** Sky/Adrian. **Cross-ref:** demo-recovery §3 (removes the manual-Deny reflex), escalations.ts:29-37.
 
+**STATUS (2026-07-18): IMPLEMENTED.** `gateOrEscalate` (`src/factory/worker.ts:124-149`)
+reads `ESCALATION_TIMEOUT_MS` (Number, `?? 0` = off); when > 0 a `setTimeout`
+auto-resolves the escalation `denied` (fail-closed), posts "auto-denied after Ns —
+content quarantined", and `clearTimeout`s on any earlier resolution. Double-resolve
+is guarded in `escalations.ts:29-34` (`resolve()` returns early if `resolved`), so an
+operator click still wins the race if it lands first. Logic complete; nothing to add.
+
+**Remaining sub-gap (demo-safety):** the var was undocumented and defaults to `0` (off).
+On stage with `AUTONOMY_MODE=supervised` (the default — flagged content escalates rather
+than auto-approving), an unanswered escalation would still hang if nobody set the var.
+Fixed: `.env.example` now documents `ESCALATION_TIMEOUT_MS` under "Worker execution" with
+a demo value (45000). The demo runbook driver must uncomment it before the attack demo.
+
 ---
 
 ## C3 — Per-message HiddenLayer scan on the bus (P0 cost / P1 correctness)
