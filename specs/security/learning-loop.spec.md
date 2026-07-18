@@ -76,6 +76,30 @@ Not "MEMORY.md exists." A closed loop with a causal story:
 The loop is **capture → compound → retrieve**, and the security lane supplies the
 richest capture source (denials + detections), which is the differentiator.
 
+> **⚠️ Retrieval re-injection hazard (deep review 2026-07-18) — SECURITY.** Step 1
+> captures `injection-seen: "data-sync mode" phrasing → flag` (the raw attack
+> phrasing) and step 3 **seeds worker prompts** with matching memories. Feeding a
+> captured injection string back into a live prompt is self-poisoning: best case
+> the gate flags our own memory every run (escalation noise on stage); worst case
+> the model acts on the re-injected instruction. The security lane's richest
+> capture source is also the most dangerous to replay. Two rules close it:
+> 1. **`injection-seen` entries store the detector name + a content hash, NEVER the
+>    raw phrasing.** The lesson the agent needs is "phrasings like this get
+>    flagged," which is carried by the detector label; the raw string belongs only
+>    in the read-only harness corpus (`injections.jsonl`), never in a prompt-fed
+>    memory. (The boundary-learning path — `policy-tightening-loop.spec.md` — is
+>    where a phrasing legitimately becomes a *rule*; that is enforced outside the
+>    agent, not injected into it.)
+> 2. **`scan()` retrieved memories at retrieve time** (`ingested_document`) before
+>    they enter any prompt — a memory line is untrusted input like any other. A
+>    flagged memory is dropped, not fed forward.
+>
+> This also supplies the mechanism behind §5.4's no-regression test (a poisoned/
+> incorrect memory must degrade gracefully) — today that test has no enforcement
+> behind it. Cross-ref `code-fixes.spec.md` C4 (recall correctness) and
+> `adversarial-harness.spec.md` §3 (`clean` false-positive guard must include
+> retrieved-memory lines).
+
 ---
 
 ## 4. Evidence to produce (judges can't read a JSON file)

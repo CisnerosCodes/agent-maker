@@ -11,6 +11,16 @@ Schema source: `docs.nvidia.com/openshell/reference/policy-schema` + `examples/s
 1. **There is NO `inference` / `inference_policy` section in the policy YAML.** The plan's "policy C = inference" and the per-worker "inference" box in the arch diagram are wrong. Inference routing is configured out-of-band via `openshell inference set --provider nvidia-nim --model ...` (see `nemoclaw-spawn.spec.md` §5.3), NOT in the policy file.
 2. **Credential handling is per-endpoint, not a global secrets block.** OpenShell strips/rewrites credentials at the network egress boundary (`credential_signing`, `request_body_credential_rewrite`, `websocket_credential_rewrite` with `openshell:resolve:env:KEY` placeholders). This is the mechanism that lets a worker call Shopify/Apify **without ever holding the raw token** — the sandbox sends a placeholder, the gateway swaps in the real secret. Central to the vault boundary AND the poisoned-doc demo (can't exfil a secret you never had).
 
+> **Canonical credential name (deep review 2026-07-18):** the placeholder env name
+> must match the host env var exactly or resolution silently fails (a 401 mid-demo).
+> Specs currently disagree — this file + poisoned-doc §1 wrote `SHOPIFY_TOKEN`;
+> shipped `vault.ts`/`worker.ts`/`.env.example` use `SHOPIFY_ADMIN_TOKEN`.
+> **Decision: `SHOPIFY_ADMIN_TOKEN` everywhere** (matches code). Placeholder below
+> is corrected to `openshell:resolve:env:SHOPIFY_ADMIN_TOKEN`. Single source of
+> truth for all credential names: `worker-capability.spec.md` §5.
+
+3. **Spend / destructive-action approval has no schema home — it must be re-expressed as path rules.** The old (fake-schema) `worker-research.yaml` carried `actions: escalate: {kind: spend, approver: operator}` — the bounty's "destructive/spend actions need operator approval" line. The REAL schema (§2) has no `actions` section and no spend semantics. So the control the narrative claims is currently backed by nothing. **Re-expression:** spend/destructive approval lives in `deny_rules` on cost-bearing paths (e.g. StoreBuilder's `price_rules`/`gift_cards`/`orders` are already denied in §4) plus the **Policy Advisor / `policy.local`** human-approval path (`policy-tightening-loop.spec.md` §2) for any endpoint an agent must reach that costs money. There is no per-action "spend" flag; there IS per-path deny + human-approved loosen. Update any PLAN/README line that promises an `actions: spend` control to point at this mapping.
+
 ---
 
 ## 2. Real schema (top-level)
@@ -26,6 +36,13 @@ Schema source: `docs.nvidia.com/openshell/reference/policy-schema` + `examples/s
 | `network_middlewares` | map | **Dynamic** (max 10) | ordered request middlewares, `fail_closed` default |
 
 **Ordering consequence (critical):** static sections (`filesystem_policy`, `process`, `landlock`) lock at `nemoclaw onboard` time — must be correct BEFORE Phase A. `network_policies` can be `openshell policy set` hot-reloaded in Phase B. So: bake fs/process into the onboard policy; iterate network live.
+
+**Two ways to change live `network_policies` (confirmed 2026-07-18, OpenShell docs):**
+- `openshell policy set` — **full replacement** of the policy document. `--wait` blocks until load; exit codes `0=loaded / 1=validation failed / 124=timeout`. Invalid disk YAML → restrictive-default fallback (fail-closed).
+- `openshell policy update` — **additive merge** into the live `network_policies` only (dynamic section); `--add-deny` / `--add-endpoint` append without rewriting the whole doc; `--dry-run` shows the merged result locally. Gateway validates the merged policy against the live one before load. This is the mechanism the self-tightening loop uses (`policy-tightening-loop.spec.md` §4).
+- **Policy Advisor / `policy.local`:** the sandboxed agent can submit a *narrow rule proposal* via `policy.local`; a developer approves/rejects it from **outside** the sandbox. Native human-in-the-loop — satisfies the bounty's "operator approval" criterion, and is the loosen path in `policy-tightening-loop.spec.md` §2.
+- **`--global` caveat:** a global policy applies to all sandboxes and **rejects sandbox-level updates until removed** — don't set one if any per-sandbox `policy update` is expected.
+- **Version caveat:** older NemoClaw builds mishandle live `network_policies` add (GitHub NemoClaw #1010/#2039) — verify `nemoclaw --version` on the box.
 
 ### filesystem_policy
 - `include_workdir` (bool) — adds workdir to read_write
@@ -159,7 +176,7 @@ network_policies:
           - path: /admin/api/*/orders*
           - path: /admin/api/*/price_rules*
           - path: /admin/api/*/gift_cards*
-        request_body_credential_rewrite: true   # X-Shopify-Access-Token via openshell:resolve:env:SHOPIFY_TOKEN
+        request_body_credential_rewrite: true   # X-Shopify-Access-Token via openshell:resolve:env:SHOPIFY_ADMIN_TOKEN
       # Graduated enforcement: fulfillment is read-only AND audit-mode (log, don't
       # block) — shows the policy makes judgments, not one global switch.
       - host: "*.myshopify.com"
