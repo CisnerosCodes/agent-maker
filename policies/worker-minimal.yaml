@@ -1,0 +1,44 @@
+# OpenShell policy — Minimal / pure-LLM worker (copywriter, strategist, analyst)
+# Spec: openshell-policy.spec.md §4 (worker-minimal reference); worker-capability.spec.md §3.
+# Owner: Sky (security lane).
+#
+# Strictest policy: roles that only think — no tools, no document ingest, no
+# credentials. The ONLY egress is Nemotron inference. Everything else (any host,
+# any exfil endpoint) is default-deny. Used for the spawn-authority table's
+# `copywriter`/`strategist`/`analyst` rows (ceo-brain-and-spawn-authority §A.1).
+
+version: 1
+
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /usr/lib/**
+    - /usr/local/lib/**
+  read_write:
+    - /workspace/**
+    - /tmp
+
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+
+landlock:
+  compatibility: best_effort
+
+network_policies:
+  # Inference-only. No ingest broker, no tool endpoints — a pure-LLM role holds no
+  # credentials, so there is nothing to exfil and nowhere to send it.
+  nvidia_inference:
+    name: nvidia-inference
+    endpoints:
+      # Delete this entry if routed inference exits via the localhost gateway
+      # (then the sandbox has ZERO direct egress — the strongest default-deny).
+      - host: integrate.api.nvidia.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-write
+        request_body_credential_rewrite: true   # openshell:resolve:env:NVIDIA_API_KEY
+    binaries:
+      - path: /usr/local/bin/openclaw
+      - path: /usr/bin/node

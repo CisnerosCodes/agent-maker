@@ -1,37 +1,56 @@
-# OpenShell policy — Research worker (TEMPLATE — Sky: verify against real OpenShell schema)
+# OpenShell policy — Research worker
+# Spec: openshell-policy.spec.md §3.  Owner: Sky (security lane).
 #
-# The story for judges: this agent HAS a real Apify credential and full agency
-# inside its sandbox, but the boundary lives HERE, not in the agent's goodwill.
-# It can research anything; it cannot exfiltrate, cannot touch other agents'
-# workspaces, and destructive/spend actions need operator approval.
+# Story for judges: this worker drives real research, but the boundary lives HERE,
+# not in the agent's goodwill. Its ONLY egress is Nemotron inference. Document
+# ingest is HARNESS-BROKERED (the Factory fetches + scan()s Apify results, then
+# hands the clean text into the sandbox) — so the sandbox never fetches un-scanned
+# bytes and every ingested doc is forced through HiddenLayer (Layer 1 of the
+# poisoned-doc demo). Everything else (incl. api.apify.com AND evil.example) is
+# default-deny — that is Layer 2, independent of HiddenLayer.
+#
+# Static sections (filesystem_policy, process, landlock) LOCK at `nemoclaw onboard`
+# time — they must be correct before Phase A. network_policies is hot-reloadable
+# via `openshell policy set` in Phase B. See nemoclaw-spawn.spec.md §3.
 
-agent: "{{AGENT_ID}}"
-sandbox: "{{SANDBOX_NAME}}"
+version: 1
 
-filesystem:
-  allow:
-    - path: /workspace/{{AGENT_ID}}
-      mode: rw
-  deny:
-    - path: /workspace          # everyone else's workspaces
-      mode: none
-    - path: /vault              # never readable by workers
-      mode: none
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /usr/lib/**
+    - /usr/local/lib/**
+  read_write:
+    - /workspace/**
+    - /tmp
 
-network:
-  default: deny
-  allow:
-    - host: api.apify.com       # the credential it was issued, and nothing else
-    - host: integrations.api.hiddenlayer.ai
-    - host: integrate.api.nvidia.com   # Nemotron inference
-  escalate:                     # allow-with-escalation: human-in-the-loop, not a blunt block
-    - host: "*.shopify.com"
-      reason: "Research role has no store access; requires operator approval"
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
 
-actions:
-  deny:
-    - kind: credential_write    # cannot mint or modify credentials
-    - kind: outbound_email      # research role has no email privileges
-  escalate:
-    - kind: spend               # anything that costs money
-      approver: operator
+landlock:
+  compatibility: best_effort
+
+network_policies:
+  # NO apify endpoint here — Apify ingest is harness-brokered (see header), so the
+  # research sandbox never fetches external documents itself. The sandbox's only
+  # egress is inference. Default-deny still independently blocks the evil.example
+  # exfil (poisoned-doc demo Layer 2), regardless of HiddenLayer.
+  nvidia_inference:
+    name: nvidia-inference
+    endpoints:
+      # ONLY needed if routed inference does NOT exit via the localhost gateway.
+      # Confirm at onboarding (open item, spec §6). If it exits via the gateway,
+      # delete this whole entry and the sandbox has zero direct egress (strongest
+      # default-deny).
+      - host: integrate.api.nvidia.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-write
+        # nvapi key injected at the gateway as openshell:resolve:env:NVIDIA_API_KEY —
+        # the sandbox holds a placeholder, never the raw nvapi- token.
+        request_body_credential_rewrite: true
+    binaries:
+      - path: /usr/local/bin/openclaw
+      - path: /usr/bin/node
