@@ -11,6 +11,7 @@ import { governance } from "../governance/governance.js";
 import { bus } from "../bus/bus.js";
 import { registry } from "../registry/registry.js";
 import { createAgent } from "../factory/factory.js";
+import { validateSpawn, type SpawnDecision } from "../security/spawn-authority.js";
 import { workerMode, runResearch, runStoreBuilder, runCopywriter, gateOrEscalate, type Product } from "../factory/worker.js";
 import { escalations } from "../security/escalations.js";
 import { runMemory, type RunRecord } from "../memory/runs.js";
@@ -201,8 +202,50 @@ class Orchestrator extends EventEmitter {
     }));
   }
 
+  // --- spawn-authority enforcement (the injected-goal defense) ---------------
+  // Every AgentSpec the CEO emits is validated against the fixed spawn-authority
+  // table (src/security/spawn-authority.ts) BEFORE the Factory's createAgent runs.
+  // The broker is deterministic and non-LLM — its input is a struct — so a fully
+  // prompt-injected CEO can only PROPOSE specs; it cannot talk the broker into
+  // provisioning an out-of-authority agent. If ANY spec in the plan is refused the
+  // WHOLE plan is refused: no agent is created (a compromised plan spawns zero
+  // agents, and there is no partial fleet left with dangling task dependencies).
+  // The broker logs + counts each denial itself; here we mirror it to the
+  // bus/dashboard and surface an honest status line. This is what makes
+  // ceo-sandbox.spec.md §5.1 real (ceo-brain-and-spawn-authority.spec.md §A).
+  private authorizeRoles(goal: Goal, roles: PlannedRole[]): boolean {
+    const denials: SpawnDecision[] = [];
+    for (const role of roles) {
+      const decision = validateSpawn(role.spec);
+      if (!decision.allowed) denials.push(decision);
+    }
+    if (denials.length === 0) return true;
+
+    for (const d of denials) {
+      bus.post({
+        threadId: goal.id, from: "ceo", kind: "system",
+        body: `Spawn-authority broker DENIED role '${d.role}': ${d.reason}. No agent created.`,
+      });
+    }
+    this.emit("spawnDenied", { goalId: goal.id, denials });
+    goal.status = "failed";
+    this.emitGoal(goal);
+    bus.post({
+      threadId: goal.id, from: "ceo", kind: "status",
+      body: `Org plan refused — ${denials.length} spawn request(s) exceeded role authority; nothing hired. The spawn-authority broker is a deterministic host gate: a compromised planner may propose out-of-authority agents but cannot provision them.`,
+    });
+    const ceo = registry.get(CEO_ID);
+    if (ceo) { ceo.status = "waiting"; registry.upsert(ceo, `Plan refused: ${denials.length} out-of-authority spawn(s) blocked`); }
+    return false;
+  }
+
   private async plan(goal: Goal) {
     const roles = this.rolesFor(goal);
+
+    // Spawn-authority gate — refuse an out-of-authority plan BEFORE any profile
+    // work, approval prompt, or hiring. A prompt-injected CEO gets no agents.
+    if (!this.authorizeRoles(goal, roles)) return;
+
     const profile = companyProfile();
     const niche = (goal.text.match(/\bfor\b\s+(.+?)(?:\s*—|$)/i)?.[1] ?? profile?.niche ?? goal.text.split("—").pop() ?? "the target market").trim();
     this.niche.set(goal.id, niche);
@@ -278,6 +321,9 @@ class Orchestrator extends EventEmitter {
 
     const taskIds: string[] = [];
     for (const role of roles) {
+      // Every role.spec reaching here passed the spawn-authority broker
+      // (authorizeRoles, at the top of plan()) — createAgent never runs on an
+      // out-of-authority spec.
       const record = await createAgent(role.spec, CEO_ID);
       if (role.spec.role === "research") this.lastResearchId = record.id;
       const mode = workerMode(role.spec.role);
