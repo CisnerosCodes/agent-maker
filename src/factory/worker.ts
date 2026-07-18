@@ -97,15 +97,33 @@ export async function gateOrEscalate(agent: AgentRecord, content: string, kind: 
   registry.upsert(agent, `Escalation: ${reason} [${result.categories.join(", ")}]`);
   const { escalation, decision } = escalations.create(agent.id, reason, result, content);
   bus.post({ threadId, from: agent.id, kind: "question", body: `Security escalation ${escalation.id}: ${reason} — detections [${result.categories.join(", ")}]. Awaiting operator approve/deny.` });
+
+  // C2: never await a human forever. ESCALATION_TIMEOUT_MS (off in dev, ON for
+  // the demo) auto-denies (fail-closed) if nobody clicks, so the worker unblocks
+  // and the ticker stops spinning. escalations.resolve() guards double-resolve,
+  // so a click still wins if it lands first; here we just clear our timer.
+  const timeoutMs = Number(process.env.ESCALATION_TIMEOUT_MS ?? 0);
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  if (timeoutMs > 0) {
+    timer = setTimeout(() => {
+      if (escalation.resolved) return; // an operator click already won the race
+      timedOut = true;
+      escalations.resolve(escalation.id, "denied");
+      bus.post({ threadId, from: agent.id, kind: "system", body: `Escalation ${escalation.id} auto-denied after ${Math.round(timeoutMs / 1000)}s — content quarantined.` });
+    }, timeoutMs);
+  }
   const verdict = await decision;
+  if (timer) clearTimeout(timer);
+
   agent.status = verdict === "approved" ? (prev === "blocked" ? "working" : prev) : agent.status;
   if (verdict === "approved") {
     registry.upsert(agent, `Escalation ${escalation.id} approved — continuing`);
     bus.post({ threadId, from: agent.id, kind: "status", body: `Operator approved ${escalation.id} — continuing.` });
     return true;
   }
-  registry.upsert(agent, `Escalation ${escalation.id} DENIED`);
-  bus.post({ threadId, from: agent.id, kind: "system", body: `Operator denied ${escalation.id} — content quarantined.` });
+  registry.upsert(agent, `Escalation ${escalation.id} ${timedOut ? "auto-denied (timeout)" : "DENIED"}`);
+  if (!timedOut) bus.post({ threadId, from: agent.id, kind: "system", body: `Operator denied ${escalation.id} — content quarantined.` });
   return false;
 }
 
