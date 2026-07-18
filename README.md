@@ -67,6 +67,27 @@ Results land in `data/evals/` as JSON + Markdown and render live at `http://loca
 
 The `ModelBackend` interface in `src/evals/backends.ts` is the same abstraction the Factory's worker loop uses — if a backend+model clears the ladder, that exact backend+model is demo-safe for workers.
 
+## Run the live demo (offline, no keys needed)
+
+```bash
+npm run dev        # then open http://localhost:4000
+```
+
+Type a goal — `make me a shopify store` — and hit Launch. The CEO asks a
+clarifying question ("which niche, how many products?"); answer in the chat.
+It then drafts the org, the Factory provisions each worker (identity → policy
+→ sandbox, all visible in the event log), and the dashboard shows per-agent
+progress bars with ETAs, dependency ordering (builder waits on research), and
+the agents talking to each other in the company channel. Click any agent card
+for a drill-down: its messages, event log, spec/identity, and a box to message
+it directly. `reset demo` clears everything.
+
+The *work loop* is simulated (timed progress + scripted milestones) so the
+demo runs offline; the pipeline around it — bus, factory, vault, registry,
+SSE — is the real one. See `docs/IMPROVEMENTS.md` for why the message bus (not
+Slack) is the company's spine, and `docs/ORCHESTRATION.md` for the swap-in
+plan for real model-backed workers.
+
 ## How the company works
 
 1. You message the CEO agent in Slack: *"Launch a Shopify store for trending shoes."*

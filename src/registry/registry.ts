@@ -30,6 +30,11 @@ class Registry extends EventEmitter {
   get(id: string) { return this.agents.get(id); }
   all(): AgentRecord[] { return [...this.agents.values()]; }
 
+  clear() {
+    this.agents.clear();
+    this.persist();
+  }
+
   private persist() {
     mkdirSync(DATA_DIR, { recursive: true });
     writeFileSync(FILE, JSON.stringify(this.all(), null, 2));
