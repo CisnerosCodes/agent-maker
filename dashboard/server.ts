@@ -6,6 +6,7 @@ import "../src/config/load-env.js"; // MUST stay first: loads .env before module
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { registry } from "../src/registry/registry.js";
 import { bus } from "../src/bus/bus.js";
 import { orchestrator } from "../src/orchestrator/orchestrator.js";
@@ -13,6 +14,7 @@ import { escalations } from "../src/security/escalations.js";
 import { heuristicScan } from "../src/security/detect.js";
 import { governance } from "../src/governance/governance.js";
 import { setupStatus, saveEnvVar } from "../src/config/env.js";
+import { runDoctor } from "../src/config/doctor.js";
 import { companyProfile, saveCompanyProfile, suggestedFirstGoal, STARTER_PACKS } from "../src/config/company.js";
 
 const PORT = Number(process.env.DASHBOARD_PORT ?? 4000);
@@ -43,6 +45,15 @@ bus.on("message", (msg) => {
   const categories = heuristicScan(msg.body);
   if (categories.length) broadcast("gate", { messageId: msg.id, from: msg.from, verdict: "flagged", categories });
 });
+
+// Approve/deny by escalation id OR by agent id. The agent-table row buttons
+// send the AGENT id (the escalation id is not on the row); resolving strictly
+// by escalation id made those buttons silently do nothing.
+function resolveEscalationRef(ref: string, verdict: "approved" | "denied") {
+  if (escalations.all().some((e) => e.id === ref)) return escalations.resolve(ref, verdict);
+  const pendingForAgent = escalations.pending().find((e) => e.agentId === ref);
+  return pendingForAgent ? escalations.resolve(pendingForAgent.id, verdict) : undefined;
+}
 
 function snapshot() {
   return {
@@ -78,11 +89,49 @@ function json(res: ServerResponse, data: unknown, status = 200) {
   res.end(JSON.stringify(data));
 }
 
+// Static assets for the front end: design system, logo, vendored libs/fonts,
+// and optional generated media (dashboard/media — gitignored-friendly, pages
+// degrade gracefully when a file is absent). Whitelist pattern, no traversal.
+const STATIC_TYPES: Record<string, string> = {
+  ".css": "text/css", ".js": "text/javascript", ".mjs": "text/javascript",
+  ".svg": "image/svg+xml", ".woff2": "font/woff2", ".png": "image/png",
+  ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
+  ".mp4": "video/mp4", ".webm": "video/webm", ".ico": "image/x-icon",
+};
+function serveStatic(res: ServerResponse, urlPath: string): boolean {
+  const rel = urlPath.replace(/^\//, "").split("?")[0];
+  if (!/^(theme\.css|logo\.svg|(vendor|media)\/[\w][\w.\/-]*)$/.test(rel) || rel.includes("..")) return false;
+  const file = fileURLToPath(new URL(`./${rel}`, import.meta.url));
+  if (!existsSync(file)) return false;
+  const ext = rel.slice(rel.lastIndexOf("."));
+  res.writeHead(200, { "Content-Type": STATIC_TYPES[ext] ?? "application/octet-stream", "Cache-Control": "no-cache" });
+  res.end(readFileSync(file));
+  return true;
+}
+
 createServer(async (req, res) => {
   try {
-    if (req.url === "/") {
+    if (req.url === "/" || req.url === "/home") {
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end(readFileSync(new URL("./landing.html", import.meta.url)));
+    } else if (req.url === "/app" || req.url === "/app/") {
       res.writeHead(200, { "Content-Type": "text/html" });
       res.end(readFileSync(new URL("./index.html", import.meta.url)));
+    } else if (req.method === "GET" && serveStatic(res, req.url ?? "")) {
+      // handled by static whitelist above
+    } else if (req.url === "/setup") {
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end(readFileSync(new URL("./setup.html", import.meta.url)));
+    } else if (req.url?.startsWith("/api/doctor")) {
+      // System self-check. ?live=0 skips the real key calls; ?only=id,id runs a
+      // subset (used by the Connections panel to verify one key right after
+      // it is saved). Results are booleans + plain English — never key values.
+      const q = new URL(req.url, "http://x").searchParams;
+      const report = await runDoctor({
+        live: q.get("live") !== "0",
+        only: q.get("only")?.split(",").filter(Boolean) ?? undefined,
+      });
+      json(res, report);
     } else if (req.url === "/evals") {
       res.writeHead(200, { "Content-Type": "text/html" });
       res.end(readFileSync(new URL("./evals.html", import.meta.url)));
@@ -98,6 +147,9 @@ createServer(async (req, res) => {
         body: `Welcome, ${profile.name}. I read your profile: niche "${profile.niche}", objective "${profile.objective}"${profile.hasStore ? `, existing store at ${profile.storeUrl ?? "(URL not given)"}` : profile.wantsStoreSetup ? ", no store yet — we'll set one up" : ""}. Starter team installed: ${profile.starterAgents.join(", ")}. ${profile.hasContext ? "Your context notes are on file — agents will use them. " : ""}Give me a goal when ready — suggested: "${suggestedFirstGoal()}".`,
       });
       json(res, { ok: true, profile, suggestedGoal: suggestedFirstGoal() });
+    } else if (req.url === "/api/snapshot" && req.method === "GET") {
+      // Same payload as the SSE hello, for pull-based clients (the MCP server).
+      json(res, snapshot());
     } else if (req.url === "/api/setup" && req.method === "GET") {
       // BOOLEANS ONLY — never returns credential values.
       json(res, setupStatus());
@@ -153,15 +205,13 @@ createServer(async (req, res) => {
       broadcast("snapshot", snapshot());
       json(res, { ok: true, keptMemory: keepMemory });
     } else if (req.url?.startsWith("/approve/") && req.method === "POST") {
-      const id = req.url.split("/")[2];
-      const esc = escalations.resolve(id, "approved");
-      if (esc) bus.post({ threadId: "company", from: "user", kind: "system", body: `Operator APPROVED ${id}` });
-      json(res, { ok: !!esc, escalation: esc });
+      const esc = resolveEscalationRef(req.url.split("/")[2], "approved");
+      if (esc) bus.post({ threadId: "company", from: "user", kind: "system", body: `Operator APPROVED ${esc.id}` });
+      json(res, { ok: !!esc, escalation: esc, ...(esc ? {} : { error: "No pending escalation matches that id — it may already be resolved." }) });
     } else if (req.url?.startsWith("/deny/") && req.method === "POST") {
-      const id = req.url.split("/")[2];
-      const esc = escalations.resolve(id, "denied");
-      if (esc) bus.post({ threadId: "company", from: "user", kind: "system", body: `Operator DENIED ${id}` });
-      json(res, { ok: !!esc, escalation: esc });
+      const esc = resolveEscalationRef(req.url.split("/")[2], "denied");
+      if (esc) bus.post({ threadId: "company", from: "user", kind: "system", body: `Operator DENIED ${esc.id}` });
+      json(res, { ok: !!esc, escalation: esc, ...(esc ? {} : { error: "No pending escalation matches that id — it may already be resolved." }) });
     } else if (req.url === "/attack" && req.method === "POST") {
       // Red-team demo (money demo #2): feed a poisoned document to a worker's
       // ingestion gate. The SecurityGate flags it and the worker RAISES a real
@@ -176,4 +226,17 @@ createServer(async (req, res) => {
   } catch (err: any) {
     json(res, { error: err.message }, 500);
   }
-}).listen(PORT, () => console.log(`Dashboard: http://localhost:${PORT}`));
+}).listen(PORT, () => {
+  console.log(`Dashboard: http://localhost:${PORT}`);
+  console.log(`Setup checklist: http://localhost:${PORT}/setup  (or run: npm run doctor)`);
+  // Clean up agents stranded in-flight by a previous session (registry
+  // persists across restarts; in-memory tasks do not).
+  orchestrator.reconcileStaleAgents();
+}).on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(`\nPort ${PORT} is already in use — is another 'npm run dev' still running?`);
+    console.error(`Close it, or start on another port:  DASHBOARD_PORT=${PORT + 1} npm run dev  (PowerShell: $env:DASHBOARD_PORT=${PORT + 1}; npm run dev)\n`);
+    process.exit(1);
+  }
+  throw err;
+});

@@ -8,6 +8,4 @@ policies/rendered/
 .DS_Store
 .claudeignore
 .serena/
-package-lock.json
-package.json
 docs/Hackathon_Docs.md

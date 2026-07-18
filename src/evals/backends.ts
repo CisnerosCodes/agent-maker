@@ -16,6 +16,10 @@ import { readFileSync } from "node:fs";
 import type { ModelBackend } from "./types.js";
 
 const DEFAULT_MAX_TOKENS = 1024;
+// Slow models are fine; HUNG requests are not. Without a timeout, one stalled
+// HTTP call left a worker task frozen mid-progress with no error and nothing
+// on screen. 3 minutes is generous headroom for the slowest reasoning model.
+const REQUEST_TIMEOUT_MS = Number(process.env.MODEL_TIMEOUT_MS ?? 180000);
 
 export class AnthropicApiBackend implements ModelBackend {
   name = "api";
@@ -35,6 +39,7 @@ export class AnthropicApiBackend implements ModelBackend {
         max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
         messages: [{ role: "user", content: prompt }],
       }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${(await res.text()).slice(0, 300)}`);
     const data: any = await res.json();
@@ -92,6 +97,7 @@ export class OpenAICompatBackend implements ModelBackend {
         max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
         messages: [{ role: "user", content: prompt }],
       }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`${this.name} ${res.status}: ${(await res.text()).slice(0, 300)}`);
     const data: any = await res.json();

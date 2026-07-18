@@ -71,14 +71,32 @@ async function fetchProducts(niche: string): Promise<any[]> {
   return ((await res.json()) as any).products ?? [];
 }
 
+let warnedBrain = "";
+function warnBrainOnce(msg: string) {
+  if (warnedBrain === msg) return;
+  warnedBrain = msg;
+  console.warn(`[worker] ${msg}`);
+}
+
 export function resolveBrain(): ModelBackend | null {
   if (process.env.SIM_MODE === "1") return null;
   const pick = process.env.WORKER_BACKEND;
-  if (pick === "api" || (!pick && process.env.ANTHROPIC_API_KEY))
-    return new AnthropicApiBackend(process.env.ANTHROPIC_API_KEY!);
-  if (pick === "nvidia" || (!pick && process.env.NVIDIA_INFERENCE_API_KEY))
-    return new OpenAICompatBackend(process.env.NVIDIA_INFERENCE_API_KEY!, process.env.NVIDIA_API_BASE ?? undefined);
+  // An explicit WORKER_BACKEND with no matching key must NOT construct a
+  // backend around an undefined key (that crashed mid-task with a cryptic
+  // 401). Fall back to sim, loudly.
+  if (pick === "api") {
+    if (process.env.ANTHROPIC_API_KEY) return new AnthropicApiBackend(process.env.ANTHROPIC_API_KEY);
+    warnBrainOnce("WORKER_BACKEND=api but ANTHROPIC_API_KEY is not set — workers fall back to simulation. Paste the key in Connections or unset WORKER_BACKEND.");
+    return null;
+  }
+  if (pick === "nvidia") {
+    if (process.env.NVIDIA_INFERENCE_API_KEY) return new OpenAICompatBackend(process.env.NVIDIA_INFERENCE_API_KEY, process.env.NVIDIA_API_BASE ?? undefined);
+    warnBrainOnce("WORKER_BACKEND=nvidia but NVIDIA_INFERENCE_API_KEY is not set — workers fall back to simulation. Paste the key in Connections or unset WORKER_BACKEND.");
+    return null;
+  }
   if (pick === "cli") return new ClaudeCliBackend();
+  if (process.env.ANTHROPIC_API_KEY) return new AnthropicApiBackend(process.env.ANTHROPIC_API_KEY);
+  if (process.env.NVIDIA_INFERENCE_API_KEY) return new OpenAICompatBackend(process.env.NVIDIA_INFERENCE_API_KEY, process.env.NVIDIA_API_BASE ?? undefined);
   return null;
 }
 
@@ -131,7 +149,11 @@ export async function gateOrEscalate(agent: AgentRecord, content: string, kind: 
   const verdict = await decision;
   if (timer) clearTimeout(timer);
 
-  agent.status = verdict === "approved" ? (prev === "blocked" ? "working" : prev) : agent.status;
+  // Whatever the verdict, the escalation is RESOLVED — the agent must not stay
+  // "blocked" (a blocked row keeps showing approve/deny buttons with nothing
+  // left to resolve). Approved -> back to work; denied -> callers either fail
+  // the task (which sets "failed") or the agent resumes its previous status.
+  agent.status = prev === "blocked" ? "working" : prev;
   if (verdict === "approved") {
     registry.upsert(agent, `Escalation ${escalation.id} approved — continuing`);
     bus.post({ threadId, from: agent.id, kind: "status", body: `Operator approved ${escalation.id} — continuing.` });

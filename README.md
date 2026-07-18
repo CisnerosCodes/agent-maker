@@ -22,10 +22,19 @@ git clone https://github.com/CisnerosCodes/agent-maker.git
 cd agent-maker
 npm install            # installs tsx + typescript + @types/node, that's it
 cp .env.example .env   # fill in whatever tokens you have; everything degrades gracefully
-npm run dev            # dashboard on http://localhost:4000
+npm run doctor         # pre-flight: checks your machine AND live-tests every key you set
+npm run dev            # site on http://localhost:4000
 ```
 
-Open http://localhost:4000 (live org chart) and http://localhost:4000/evals (model eval results — a real run is committed, so this page works immediately).
+New to all of this? Follow **SETUP_CHECKLIST.md** — plain-English steps with a
+"how to check it worked" line for each. Once the server is up,
+**http://localhost:4000/setup** runs the same checks visually (re-run with one
+click), and every key saved in the Connections panel is immediately verified
+with a real call to the provider — a pasted-but-broken key tells you exactly
+why (invalid, out of credit, wrong store URL…). Testing the product end to end?
+Follow **docs/TESTING.md**.
+
+Open http://localhost:4000 (landing page), http://localhost:4000/app (Mission Control — the live org chart), and http://localhost:4000/evals (model eval results — a real run is committed, so this page works immediately).
 
 **Troubleshooting:**
 - `'tsx' is not recognized` → you skipped `npm install`, run it in the repo root.
@@ -33,10 +42,24 @@ Open http://localhost:4000 (live org chart) and http://localhost:4000/evals (mod
 - Port 4000 busy → `set DASHBOARD_PORT=4001` (PowerShell: `$env:DASHBOARD_PORT=4001`) then `npm run dev`.
 - Eval `--backend cli` returns 401 → your `claude` CLI login is stale; run `claude` once interactively and sign in, then retry.
 
+## Bring your own agent (MCP)
+
+You don't have to learn the dashboard — your AI can drive the whole product. With the
+dashboard running, connect Claude to the built-in MCP server:
+
+```bash
+claude mcp add agent-maker -- npx tsx src/mcp/server.ts
+```
+
+Then ask it: *"set up my agent company."* It onboards you, gives you your dashboard
+link, launches goals, monitors the org live, and explains every security escalation —
+same live company as the dashboard, chat wherever you prefer. See `docs/MCP.md`.
+
 ## Scripts
 
 ```bash
-npm run dev            # dashboard: SSE org chart + /evals report page
+npm run dev            # site: landing (/) + Mission Control (/app) + /evals report
+npm run mcp            # MCP server (stdio) — connect your own agent; see docs/MCP.md
 npm run eval           # run the Instruction-Following Ladder (see below)
 npm run eval:prompts   # dump all level prompts as JSON
 npm run typecheck      # tsc --noEmit
@@ -70,7 +93,7 @@ The `ModelBackend` interface in `src/evals/backends.ts` is the same abstraction 
 ## Run the live demo (offline, no keys needed)
 
 ```bash
-npm run dev        # then open http://localhost:4000
+npm run dev        # then open http://localhost:4000/app
 ```
 
 Type a goal — `make me a shopify store` — and hit Launch. The CEO asks a
@@ -139,7 +162,8 @@ src/
   security/       SecurityGate: HiddenLayer wrapper, detection routing policy
   registry/       Agent registry: who exists, status, lineage
   evals/          Instruction-Following Ladder: levels, graders, model backends, runner
-dashboard/        SSE server + org chart + /evals report page
+dashboard/        SSE server + landing page (/) + Mission Control (/app) + /evals
+                  (vendored Three.js + fonts in vendor/; drop-in media per docs/MEDIA.md)
 policies/         OpenShell policy YAML per worker role
 docs/             ORCHESTRATION.md (build order) + submission write-ups
 data/evals/       Committed eval runs (responses + graded reports)

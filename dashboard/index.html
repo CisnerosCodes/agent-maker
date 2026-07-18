@@ -1,183 +1,381 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Agent Corp — Live</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent-Maker — Mission Control</title>
+  <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+  <link rel="stylesheet" href="/theme.css" />
   <style>
-    * { box-sizing: border-box; }
-    body { font-family: ui-monospace, monospace; background: #0b0e14; color: #d6deeb; margin: 0; padding: 1.2rem 1.5rem; }
-    h1 { font-size: 1.05rem; letter-spacing: 0.1em; margin: 0; }
-    a { color: #61c3ff; text-decoration: none; }
-    button { background: #1d2635; color: inherit; border: 1px solid #3a4358; border-radius: 6px; padding: 0.35rem 0.8rem; cursor: pointer; font-family: inherit; }
-    button:hover { background: #263349; }
-    button.deny { border-color: #7a2030; }
-    input, select { background: #10151f; color: inherit; border: 1px solid #2a3040; border-radius: 6px; padding: 0.45rem 0.6rem; font-family: inherit; font-size: 0.8rem; }
+    :root {
+      --paper: #faf9f6;
+      --card: #ffffff;
+      --ink: #1c1626;
+      --ink-dim: #5f5a6b;
+      --ink-mute: #94909e;
+      --line: #e9e6e0;
+      --line-dark: #d8d4cc;
+      --accent: #6d28d9;
+      --accent-ink: #4c1d95;
+      --accent-soft: #f3eefc;
+      --green: #157f4d;
+      --green-soft: #e4f3ea;
+      --amber: #96660a;
+      --amber-soft: #f9f0da;
+      --red: #b3234a;
+      --red-soft: #fbe9ee;
+      --sky: #0e6f9e;
+      --sky-soft: #e7f2f8;
+      --honey: #b57a12;
+      --radius: 10px;
+      --shadow: 0 1px 2px rgba(28, 22, 38, 0.05), 0 8px 28px rgba(28, 22, 38, 0.07);
+    }
+    body { background: var(--paper); color: var(--ink); font-size: 14px; }
+    a { color: var(--accent-ink); text-decoration: none; }
 
-    .topbar { display: flex; align-items: center; gap: 1rem; margin-bottom: 1rem; }
-    .topbar .spacer { flex: 1; }
-    .goalbar { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+    button {
+      font-family: var(--font-sans); font-size: 0.82rem; font-weight: 500;
+      background: var(--card); color: var(--ink);
+      border: 1px solid var(--line-dark); border-radius: 8px;
+      padding: 0.42rem 0.85rem; cursor: pointer;
+      transition: background .12s, border-color .12s;
+    }
+    button:hover { background: #f4f2ee; border-color: #c6c1b8; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.primary:hover { background: #5b21b6; }
+    button.approve { color: var(--green); }
+    button.approve:hover { background: var(--green-soft); border-color: var(--green); }
+    button.deny { color: var(--red); }
+    button.deny:hover { background: var(--red-soft); border-color: var(--red); }
+    button.quiet { border-color: transparent; background: transparent; color: var(--ink-dim); padding: 0.42rem 0.6rem; text-align: left; }
+    button.quiet:hover { background: #f1efe9; border-color: transparent; }
+
+    input, select, textarea {
+      font-family: var(--font-sans); font-size: 0.84rem;
+      background: var(--card); color: var(--ink);
+      border: 1px solid var(--line-dark); border-radius: 8px; padding: 0.5rem 0.7rem;
+    }
+    input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(109, 40, 217, 0.1); }
+    input::placeholder, textarea::placeholder { color: var(--ink-mute); }
+
+    /* ---------- shell ---------- */
+    .shell { display: grid; grid-template-columns: 216px 1fr; min-height: 100vh; }
+    .side {
+      background: var(--card); border-right: 1px solid var(--line);
+      padding: 1.1rem 0.9rem; display: flex; flex-direction: column; gap: 0.2rem;
+      position: sticky; top: 0; height: 100vh;
+    }
+    .wordmark { font-family: var(--font-brand); font-weight: 700; font-size: 1rem; letter-spacing: 0.01em; padding: 0.2rem 0.6rem 1rem; display: flex; align-items: center; gap: 0.5rem; color: var(--ink); }
+    .wordmark img { display: block; border-radius: 7px; }
+    .side nav { display: flex; flex-direction: column; gap: 0.15rem; }
+    .side nav a, .side nav button {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 0.84rem; color: var(--ink-dim); padding: 0.42rem 0.6rem; border-radius: 7px;
+      border: none; background: none; cursor: pointer; font-weight: 500; text-align: left; width: 100%;
+    }
+    .side nav a:hover, .side nav button:hover { background: #f4f2ee; color: var(--ink); }
+    .side nav .active { color: var(--ink); background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+    .side .count { font-family: var(--font-mono); font-size: 0.68rem; color: var(--ink-mute); }
+    .side-group { margin-top: 1.3rem; }
+    .side-label { font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-mute); padding: 0 0.6rem 0.4rem; font-weight: 600; }
+    .dial { display: flex; flex-direction: column; gap: 0.15rem; }
+    .dial button { border: none; background: none; text-align: left; color: var(--ink-dim); padding: 0.35rem 0.6rem; border-radius: 7px; font-size: 0.82rem; display: flex; align-items: center; gap: 0.5rem; }
+    .dial button::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--line-dark); }
+    .dial button.active { color: var(--ink); background: #f4f2ee; }
+    .dial button.active::before { background: var(--accent); }
+    .side .spacer { flex: 1; }
+    .side .demo button { width: 100%; margin-bottom: 0.3rem; }
+
+    /* ---------- main ---------- */
+    main { padding: 1.4rem clamp(1.2rem, 3vw, 2.4rem) 3rem; min-width: 0; }
+    .pagehead { display: flex; align-items: center; gap: 1.5rem; margin-bottom: 1.2rem; flex-wrap: wrap; }
+    .pagehead h1 { font-family: var(--font-serif); font-weight: 400; font-size: 1.7rem; margin: 0; letter-spacing: 0.005em; }
+    .goalbar { display: flex; gap: 0.5rem; flex: 1; min-width: 300px; max-width: 640px; margin-left: auto; }
     .goalbar input { flex: 1; }
-    .goalstrip { font-size: 0.72rem; color: #8a93a6; margin-bottom: 0.8rem; }
-    .goalstrip b { color: #f5a623; }
+    .goalstrip { font-size: 0.74rem; color: var(--ink-mute); margin: 0.6rem 0 0; font-family: var(--font-mono); line-height: 1.7; }
+    .goalstrip b { color: var(--ink-dim); font-weight: 600; }
 
-    .layout { display: grid; grid-template-columns: 1.4fr 1fr; gap: 1rem; align-items: start; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.8rem; }
-    .card { border: 1px solid #2a3040; border-radius: 8px; padding: 0.8rem; background: #121722; cursor: pointer; }
-    .card:hover { border-color: #3a4a66; }
-    .card.ceo { border-color: #f5a623; }
-    .card .role { font-size: 0.62rem; color: #61c3ff; text-transform: uppercase; letter-spacing: 0.08em; }
-    .card .email { font-size: 0.68rem; color: #8a93a6; }
-    .card .objective { font-size: 0.72rem; margin: 0.3rem 0; color: #b8c2d6; }
-    .status { display: inline-block; padding: 0.05rem 0.5rem; border-radius: 999px; font-size: 0.68rem; }
-    .working { background: #123c22; color: #5ff59a; }
-    .blocked { background: #4a1220; color: #ff6b81; }
-    .provisioning, .starting { background: #103046; color: #61c3ff; }
-    .waiting { background: #2a2a12; color: #d9d26a; }
-    .done { background: #1e2a12; color: #b8e986; }
-    .failed, .terminated { background: #4a1220; color: #ff6b81; }
+    /* alerts */
+    .esc, .plan {
+      background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--red);
+      border-radius: var(--radius); padding: 0.85rem 1.1rem; margin-bottom: 0.9rem; box-shadow: var(--shadow);
+    }
+    .plan { border-left-color: var(--accent); }
+    .esc h3, .plan h3 { margin: 0 0 0.25rem; font-size: 0.88rem; font-weight: 600; }
+    .esc h3 { color: var(--red); }
+    .plan h3 { color: var(--accent-ink); }
+    .esc .cats { font-family: var(--font-mono); font-size: 0.7rem; color: var(--red); }
+    .esc .content, .plan .roles { font-size: 0.8rem; color: var(--ink-dim); margin: 0.35rem 0; line-height: 1.55; word-break: break-word; }
+    .esc .actions, .plan .actions { display: flex; gap: 0.5rem; margin-top: 0.55rem; }
 
-    .bar { height: 7px; border-radius: 4px; background: #1d2635; margin-top: 0.45rem; overflow: hidden; }
-    .bar > div { height: 100%; background: linear-gradient(90deg, #2f7a4b, #5ff59a); transition: width 0.6s ease; }
-    .eta { font-size: 0.65rem; color: #8a93a6; margin-top: 0.25rem; }
-    .mode { font-size: 0.58rem; padding: 0.02rem 0.4rem; border-radius: 4px; margin-left: 0.4rem; letter-spacing: 0.05em; }
-    .mode.real { background: #0f2e1c; color: #5ff59a; border: 1px solid #2f7a4b; }
-    .mode.sim { background: #2e2410; color: #d9a441; border: 1px solid #6b5220; }
-    .esc { border: 1px solid #7a2030; background: #22101a; border-radius: 8px; padding: 0.7rem 0.9rem; margin-bottom: 1rem; }
-    .esc h3 { margin: 0 0 0.3rem; font-size: 0.78rem; color: #ff8a9b; letter-spacing: 0.06em; }
-    .esc .cats { font-size: 0.68rem; color: #ffb3bf; }
-    .esc .content { font-size: 0.68rem; color: #9aa5bd; margin: 0.3rem 0; word-break: break-word; }
-    .esc .actions { display: flex; gap: 0.5rem; margin-top: 0.4rem; }
-    .esc button.approve { border-color: #2f7a4b; }
-    .learning { border: 1px solid #234a6b; background: #0e1c2a; border-radius: 8px; padding: 0.6rem 0.9rem; margin-bottom: 1rem; font-size: 0.72rem; }
+    /* summary row */
+    .summary { display: grid; grid-template-columns: 1.2fr 1fr; gap: 0.9rem; margin: 1.1rem 0; align-items: stretch; }
+    @media (max-width: 900px) { .summary { grid-template-columns: 1fr; } }
+    .scard { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem 1.2rem; }
+    .scard .slabel { font-size: 0.72rem; color: var(--ink-mute); font-weight: 600; margin-bottom: 0.5rem; }
+    .scard .big { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.01em; }
+    .scard .big small { font-size: 0.78rem; color: var(--ink-mute); font-weight: 500; margin-left: 0.3rem; }
+    .pbar { height: 8px; border-radius: 5px; background: #efede7; overflow: hidden; margin: 0.6rem 0 0.55rem; display: flex; }
+    .pbar i { display: block; height: 100%; }
+    .pbar .p-done { background: #2fa06a; }
+    .pbar .p-working { background: var(--accent); }
+    .pbar .p-blocked { background: #d6688a; }
+    .legend { display: flex; gap: 1.1rem; flex-wrap: wrap; font-size: 0.72rem; color: var(--ink-dim); }
+    .legend span::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 0.35rem; background: var(--line-dark); }
+    .legend .l-done::before { background: #2fa06a; }
+    .legend .l-working::before { background: var(--accent); }
+    .legend .l-queued::before { background: var(--line-dark); }
+    .legend .l-blocked::before { background: #d6688a; }
+    .kv { display: flex; gap: 1.6rem; flex-wrap: wrap; }
+    .kv .k { font-size: 0.72rem; color: var(--ink-mute); }
+    .kv .v { font-size: 1.15rem; font-weight: 600; margin-top: 0.1rem; }
+    .kv .v.red { color: var(--red); }
+
+    /* learning strip */
+    .learning { font-size: 0.78rem; color: var(--ink-dim); background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.8rem 1.2rem; margin-bottom: 1rem; line-height: 1.7; }
     .learning:empty { display: none; }
-    .learning h3 { margin: 0 0 0.4rem; font-size: 0.72rem; color: #61c3ff; letter-spacing: 0.06em; }
-    .learning .row { color: #9aa5bd; padding: 0.15rem 0; }
-    .learning .faster { color: #5ff59a; }
-    .dial { display: flex; gap: 0.3rem; align-items: center; margin-right: 0.5rem; }
-    .dial .lbl { font-size: 0.6rem; color: #8a93a6; text-transform: uppercase; letter-spacing: 0.08em; margin-right: 0.2rem; }
-    .dial button { padding: 0.25rem 0.6rem; font-size: 0.7rem; border-color: #2a3040; color: #8a93a6; background: #10151f; }
-    .dial button.active { border-color: #61c3ff; color: #cfeaff; background: #14293a; }
-    .dial button.active[data-mode="autonomous"] { border-color: #f5a623; color: #ffd479; background: #2e2410; }
-    .dial button.active[data-mode="assisted"] { border-color: #5ff59a; color: #b8e986; background: #0f2e1c; }
-    .plan { border: 1px solid #3a5a2a; background: #14220e; border-radius: 8px; padding: 0.7rem 0.9rem; margin-bottom: 1rem; }
-    .plan h3 { margin: 0 0 0.3rem; font-size: 0.78rem; color: #b8e986; letter-spacing: 0.06em; }
-    .plan .roles { font-size: 0.7rem; color: #9aa5bd; margin: 0.3rem 0; }
-    .plan .actions { display: flex; gap: 0.5rem; margin-top: 0.4rem; }
-    .plan button.approve { border-color: #2f7a4b; }
-    .log { font-size: 0.62rem; color: #6b7590; max-height: 4.4rem; overflow-y: auto; margin-top: 0.4rem; }
+    .learning h3 { margin: 0 0 0.2rem; font-size: 0.72rem; color: var(--ink-mute); font-weight: 600; }
+    .learning .row b { color: var(--ink); font-weight: 600; }
+    .learning .faster { color: var(--green); }
 
-    .chat { border: 1px solid #2a3040; border-radius: 8px; background: #0e131c; display: flex; flex-direction: column; height: calc(100vh - 190px); min-height: 420px; position: sticky; top: 1rem; }
-    .chat h2 { font-size: 0.72rem; letter-spacing: 0.1em; color: #8a93a6; margin: 0; padding: 0.7rem 0.9rem; border-bottom: 1px solid #1d2635; display: flex; gap: 0.6rem; align-items: center; }
-    .chat h2 select { font-size: 0.7rem; padding: 0.2rem 0.4rem; }
-    .msgs { flex: 1; overflow-y: auto; padding: 0.8rem 0.9rem; display: flex; flex-direction: column; gap: 0.55rem; }
-    .msg { font-size: 0.74rem; line-height: 1.4; }
-    .msg .who { color: #61c3ff; }
-    .msg .who.user { color: #f5a623; }
-    .msg .who.ceo { color: #e8b866; }
-    .msg .arrow { color: #4a5570; }
-    .msg .thread { color: #4a5570; font-size: 0.62rem; }
-    .msg.question .body { color: #ffd479; }
-    .msg.finding .body { color: #9be9b8; }
-    .msg.status .body { color: #8a93a6; }
-    .composer { display: flex; gap: 0.4rem; padding: 0.7rem 0.9rem; border-top: 1px solid #1d2635; }
+    /* agents table */
+    .tablewrap { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
+    th { text-align: left; font-size: 0.7rem; font-weight: 600; color: var(--ink-mute); padding: 0.65rem 1rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+    td { padding: 0.72rem 1rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover td { background: #faf8f4; }
+    .st { white-space: nowrap; font-weight: 500; color: var(--ink-dim); }
+    .st i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 0.45rem; background: var(--line-dark); }
+    .st.working { color: var(--green); } .st.working i { background: var(--green); }
+    .st.done { color: var(--ink-dim); } .st.done i { background: #2fa06a; }
+    .st.blocked { color: var(--red); font-weight: 600; } .st.blocked i { background: var(--red); }
+    .st.waiting { color: var(--amber); } .st.waiting i { background: var(--amber); }
+    .st.provisioning, .st.starting { color: var(--sky); } .st.provisioning i, .st.starting i { background: var(--sky); }
+    .st.failed, .st.terminated { color: var(--red); } .st.failed i, .st.terminated i { background: var(--red); }
+    .aname { font-weight: 600; }
+    .aname .ceo-tag { font-family: var(--font-mono); font-size: 0.62rem; color: var(--honey); margin-left: 0.4rem; letter-spacing: 0.06em; }
+    .arole { font-size: 0.72rem; color: var(--ink-mute); margin-top: 0.1rem; }
+    .ttitle { color: var(--ink-dim); max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tbar { height: 4px; border-radius: 3px; background: #efede7; overflow: hidden; margin-top: 0.4rem; max-width: 220px; }
+    .tbar i { display: block; height: 100%; background: var(--accent); transition: width .6s ease; }
+    .mode-real { font-family: var(--font-mono); font-size: 0.68rem; color: var(--green); font-weight: 600; letter-spacing: 0.04em; }
+    .mode-sim { font-family: var(--font-mono); font-size: 0.68rem; color: var(--ink-mute); letter-spacing: 0.04em; }
+    .eta { font-family: var(--font-mono); font-size: 0.7rem; color: var(--ink-mute); white-space: nowrap; }
+    td.rowact { white-space: nowrap; }
+    td.rowact button { padding: 0.25rem 0.6rem; font-size: 0.74rem; }
+    .empty { padding: 2.2rem 1rem; text-align: center; color: var(--ink-mute); font-size: 0.85rem; }
+
+    /* ---------- slide-overs ---------- */
+    .over-back { position: fixed; inset: 0; background: rgba(28, 22, 38, 0.28); display: none; z-index: 30; }
+    .over-back.open { display: block; }
+    .panel {
+      position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 94vw); z-index: 31;
+      background: var(--card); border-left: 1px solid var(--line);
+      transform: translateX(102%); transition: transform .22s ease; display: flex; flex-direction: column;
+      box-shadow: -12px 0 40px rgba(28, 22, 38, 0.12);
+    }
+    .panel.open { transform: none; }
+    .panel .phead { display: flex; align-items: center; gap: 0.7rem; padding: 0.9rem 1.1rem; border-bottom: 1px solid var(--line); }
+    .panel .phead h2 { font-family: var(--font-serif); font-weight: 400; font-size: 1.15rem; margin: 0; flex: 1; }
+    .panel .pbody { flex: 1; overflow-y: auto; padding: 1rem 1.1rem; }
+
+    /* chat */
+    #chatPanel .pbody { display: flex; flex-direction: column; gap: 0.55rem; }
+    .msg { font-size: 0.8rem; line-height: 1.5; }
+    .msg .who { font-weight: 600; color: var(--accent-ink); }
+    .msg .who.user, .msg .who.ceo { color: var(--honey); }
+    .msg .arrow, .msg .thread { color: var(--ink-mute); }
+    .msg .thread { font-size: 0.66rem; font-family: var(--font-mono); }
+    .msg.question .body { color: var(--amber); }
+    .msg.finding .body { color: var(--green); }
+    .msg.status .body { color: var(--ink-mute); }
+    .composer { display: flex; gap: 0.45rem; padding: 0.8rem 1.1rem; border-top: 1px solid var(--line); }
     .composer input { flex: 1; }
 
-    .setup { border: 1px solid #2a3040; border-radius: 8px; background: #0e131c; margin-bottom: 1rem; }
-    .setup summary { cursor: pointer; padding: 0.6rem 0.9rem; font-size: 0.72rem; letter-spacing: 0.08em; color: #8a93a6; }
-    .setup summary b { color: #d6deeb; }
-    .setup summary .conn { color: #5ff59a; }
-    .setup .note { font-size: 0.65rem; color: #6b7590; padding: 0 0.9rem 0.5rem; }
-    .setup .integ { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; padding: 0.55rem 0.9rem; border-top: 1px dashed #1a2130; }
-    .setup .dot { font-size: 0.8rem; }
-    .setup .dot.on { color: #5ff59a; }
-    .setup .dot.off { color: #4a5570; }
-    .setup .ilabel { font-size: 0.76rem; color: #d6deeb; min-width: 13rem; }
-    .setup .unlocks { flex-basis: 100%; font-size: 0.66rem; color: #8a93a6; padding-left: 1.3rem; }
-    .setup .hint { flex-basis: 100%; font-size: 0.62rem; color: #6b7590; padding-left: 1.3rem; }
-    .setup .keyrow { display: flex; gap: 0.4rem; align-items: center; padding-left: 1.3rem; flex-basis: 100%; margin-top: 0.2rem; }
-    .setup .keyrow .kname { font-size: 0.62rem; color: #8a93a6; min-width: 15rem; }
-    .setup .keyrow input { flex: 1; font-size: 0.7rem; padding: 0.25rem 0.5rem; }
-    .setup .keyrow .kset { font-size: 0.62rem; color: #5ff59a; }
-    .wizard-back { position: fixed; inset: 0; background: rgba(4,6,10,0.82); display: none; z-index: 40; }
-    .wizard { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); width: min(680px, 94vw); max-height: 88vh; overflow-y: auto; background: #0e131c; border: 1px solid #3a4a66; border-radius: 10px; padding: 1.3rem 1.5rem; display: none; z-index: 41; }
+    /* connections */
+    .integ { padding: 0.8rem 0; border-bottom: 1px dashed var(--line); }
+    .integ:last-child { border-bottom: none; }
+    .integ .irow { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
+    .integ .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line-dark); display: inline-block; }
+    .integ .dot.on { background: var(--green); }
+    .integ .ilabel { font-weight: 600; font-size: 0.84rem; }
+    .integ .kset { font-size: 0.7rem; color: var(--green); }
+    .integ .unlocks { font-size: 0.74rem; color: var(--ink-dim); margin: 0.25rem 0 0; line-height: 1.5; }
+    .integ .hint { font-size: 0.7rem; color: var(--ink-mute); margin-top: 0.2rem; }
+    .integ .keyrow { display: flex; gap: 0.4rem; align-items: center; margin-top: 0.45rem; }
+    .integ .keyrow .kname { font-family: var(--font-mono); font-size: 0.64rem; color: var(--ink-mute); min-width: 11rem; }
+    .integ .keyrow input { flex: 1; font-size: 0.74rem; padding: 0.3rem 0.55rem; }
+    .conn-note { font-size: 0.74rem; color: var(--ink-mute); line-height: 1.55; margin-bottom: 0.6rem; }
+
+    /* drawer (agent detail) */
+    #drawer.panel { width: min(560px, 94vw); }
+    #drawer pre { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 0.7rem; font-family: var(--font-mono); font-size: 0.7rem; white-space: pre-wrap; word-break: break-word; max-height: 15rem; overflow-y: auto; }
+    #drawer .section { font-size: 0.66rem; color: var(--ink-mute); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; margin: 1.1rem 0 0.35rem; }
+    #drawer .dlog { font-family: var(--font-mono); font-size: 0.7rem; color: var(--ink-dim); }
+    #drawer .dlog div { padding: 0.2rem 0; border-bottom: 1px dashed var(--line); }
+    #drawer .email { font-size: 0.74rem; color: var(--ink-mute); font-family: var(--font-mono); }
+    #drawer .objective { font-size: 0.82rem; color: var(--ink-dim); line-height: 1.55; }
+    #drawer .stat-line { font-size: 0.74rem; color: var(--ink-dim); margin-top: 0.4rem; font-family: var(--font-mono); }
+
+    /* wizard */
+    .wizard-back { position: fixed; inset: 0; background: rgba(28, 22, 38, 0.32); display: none; z-index: 40; }
+    .wizard { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); width: min(640px, 94vw); max-height: 88vh; overflow-y: auto; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 1.6rem 1.8rem; display: none; z-index: 41; box-shadow: var(--shadow); }
     .wizard.open, .wizard-back.open { display: block; }
-    .wizard h2 { margin: 0 0 0.2rem; font-size: 1rem; letter-spacing: 0.06em; }
-    .wizard .sub { font-size: 0.7rem; color: #8a93a6; margin-bottom: 1rem; }
-    .wizard .q { font-size: 0.75rem; color: #d6deeb; margin: 0.9rem 0 0.35rem; }
-    .wizard .q small { color: #6b7590; }
+    .wizard h2 { font-family: var(--font-serif); font-weight: 400; margin: 0 0 0.2rem; font-size: 1.45rem; }
+    .wizard .sub { font-size: 0.8rem; color: var(--ink-dim); margin-bottom: 1rem; line-height: 1.5; }
+    .wizard .q { font-size: 0.84rem; font-weight: 600; margin: 1rem 0 0.4rem; }
+    .wizard .q small { color: var(--ink-mute); font-weight: 400; }
     .wizard input[type=text], .wizard textarea { width: 100%; }
-    .wizard textarea { background: #10151f; color: inherit; border: 1px solid #2a3040; border-radius: 6px; padding: 0.45rem 0.6rem; font-family: inherit; font-size: 0.74rem; min-height: 4.5rem; }
-    .wizard .opts { display: flex; flex-wrap: wrap; gap: 0.35rem; }
-    .wizard .opt { border: 1px solid #2a3040; border-radius: 999px; padding: 0.25rem 0.7rem; font-size: 0.7rem; color: #9aa5bd; cursor: pointer; user-select: none; }
-    .wizard .opt.sel { border-color: #61c3ff; color: #cfeaff; background: #14293a; }
-    .wizard .actions { display: flex; gap: 0.6rem; margin-top: 1.1rem; }
-    .wizard .actions .primary { border-color: #2f7a4b; color: #b8e986; }
-    .drawer-back { position: fixed; inset: 0; background: rgba(4,6,10,0.6); display: none; }
-    .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 92vw); background: #0e131c; border-left: 1px solid #2a3040; padding: 1.2rem; overflow-y: auto; display: none; }
-    .drawer.open, .drawer-back.open { display: block; }
-    .drawer h2 { margin-top: 0; font-size: 0.95rem; }
-    .drawer pre { background: #0b0e14; border: 1px solid #1d2635; border-radius: 6px; padding: 0.6rem; font-size: 0.68rem; white-space: pre-wrap; word-break: break-word; max-height: 16rem; overflow-y: auto; }
-    .drawer .section { font-size: 0.68rem; color: #8a93a6; text-transform: uppercase; letter-spacing: 0.1em; margin: 1rem 0 0.3rem; }
-    .drawer .dlog { font-size: 0.7rem; color: #9aa5bd; }
-    .drawer .dlog div { padding: 0.15rem 0; border-bottom: 1px dashed #1a2130; }
+    .wizard textarea { min-height: 4.2rem; resize: vertical; }
+    .wizard .opts { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .wizard .opt { border: 1px solid var(--line-dark); border-radius: 8px; padding: 0.32rem 0.75rem; font-size: 0.78rem; color: var(--ink-dim); cursor: pointer; user-select: none; }
+    .wizard .opt:hover { border-color: #b9b3a8; }
+    .wizard .opt.sel { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-soft); }
+    .wizard .actions { display: flex; gap: 0.6rem; margin-top: 1.2rem; }
+
+    /* toasts — every button press gets visible feedback, success or failure */
+    #toasts { position: fixed; bottom: 1.1rem; right: 1.1rem; z-index: 60; display: flex; flex-direction: column; gap: .5rem; max-width: min(380px, 90vw); }
+    .toast { background: var(--ink); color: #fff; border-radius: 9px; padding: .6rem .9rem; font-size: .8rem; line-height: 1.45; box-shadow: var(--shadow); animation: toast-in .18s ease; }
+    .toast.err { background: var(--red); }
+    .toast.ok { background: var(--green); }
+    @keyframes toast-in { from { transform: translateY(8px); opacity: 0; } }
+
+    /* CEO question banner — the clarifying question must not hide in a closed panel */
+    .ask { background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--amber); border-radius: var(--radius); padding: 0.85rem 1.1rem; margin-bottom: 0.9rem; box-shadow: var(--shadow); }
+    .ask h3 { margin: 0 0 0.25rem; font-size: 0.88rem; font-weight: 600; color: var(--amber); }
+    .ask .content { font-size: 0.8rem; color: var(--ink-dim); margin: 0.35rem 0; line-height: 1.55; }
+    .ask .actions { display: flex; gap: 0.5rem; margin-top: 0.55rem; }
+    .ask .actions input { flex: 1; }
+
+    /* a REAL task mid-model-call: progress can sit still while the model
+       thinks — pulse the bar so "slow" never reads as "dead" */
+    .tbar.running i { animation: tbar-pulse 1.6s ease-in-out infinite; }
+    @keyframes tbar-pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+
+    /* per-key verify status in Connections */
+    .integ .verify { font-size: .72rem; margin-top: .3rem; line-height: 1.5; }
+    .integ .verify.ok { color: var(--green); }
+    .integ .verify.bad { color: var(--red); }
+    .integ .verify.busy { color: var(--ink-mute); }
   </style>
 </head>
 <body>
-  <div class="topbar">
-    <h1>AGENT CORP — LIVE</h1>
-    <a href="/evals">→ model evals</a>
-    <div class="spacer"></div>
-    <div class="dial" id="dial">
-      <span class="lbl">autonomy</span>
-      <button data-mode="assisted">assisted</button>
-      <button data-mode="supervised">supervised</button>
-      <button data-mode="autonomous">autonomous</button>
-    </div>
-    <button id="attackBtn" class="deny">inject poisoned doc</button>
-    <button id="resetBtn" class="deny">reset demo</button>
-  </div>
-
-  <div id="escalations"></div>
-  <div id="plans"></div>
-  <div id="learning" class="learning"></div>
-
-  <div class="goalbar">
-    <input id="goalInput" placeholder='Give the CEO a goal… e.g. "make me a shopify store"' />
-    <button id="goalBtn">Launch goal</button>
-  </div>
-  <div class="goalstrip" id="goalstrip"></div>
-
-  <details class="setup" id="setupPanel">
-    <summary>🔌 <b>BUSINESS SETUP</b> — <span id="setupCount" class="conn"></span> · connect your accounts so the agents do the real thing (each key flips a SIMULATION badge to REAL)</summary>
-    <div class="note">Keys are saved on your machine only (.env). They are never shown again, never sent to any AI model, and never appear in the company channel.</div>
-    <div id="setupRows"></div>
-  </details>
-
-  <div class="layout">
-    <div class="grid" id="grid"></div>
-    <div class="chat">
-      <h2>COMPANY CHANNEL
-        <select id="threadFilter"><option value="all">all threads</option></select>
-      </h2>
-      <div class="msgs" id="msgs"></div>
-      <div class="composer">
-        <select id="msgTarget"><option value="">→ CEO / company</option></select>
-        <input id="msgInput" placeholder="Message the company…" />
-        <button id="msgBtn">Send</button>
+  <div class="shell">
+    <aside class="side">
+      <div class="wordmark"><img src="/logo.svg" width="24" height="24" alt="" />Agent-Maker</div>
+      <nav>
+        <a class="active" href="/app">Overview</a>
+        <a href="/setup">Setup check</a>
+        <a href="/evals">Evals</a>
+        <a href="/">Landing page</a>
+        <button id="chatToggle">Channel <span class="count" id="chatCount"></span></button>
+        <button id="connToggle">Connections <span class="count" id="setupCount"></span></button>
+      </nav>
+      <div class="side-group">
+        <div class="side-label">Autonomy</div>
+        <div class="dial" id="dial">
+          <button data-mode="assisted">Assisted</button>
+          <button data-mode="supervised">Supervised</button>
+          <button data-mode="autonomous">Autonomous</button>
+        </div>
       </div>
+      <div class="spacer"></div>
+      <div class="side-group demo">
+        <div class="side-label">Demo</div>
+        <button id="attackBtn" class="deny">Inject poisoned doc</button>
+        <button id="resetBtn" class="quiet">Reset demo</button>
+      </div>
+    </aside>
+
+    <main>
+      <header class="pagehead">
+        <h1>Mission Control</h1>
+        <div class="goalbar">
+          <input id="goalInput" placeholder='Give the CEO a goal, e.g. "make me a shopify store"' />
+          <button id="goalBtn" class="primary">Launch</button>
+        </div>
+      </header>
+
+      <div id="escalations"></div>
+      <div id="plans"></div>
+      <div id="asks"></div>
+
+      <section class="summary">
+        <div class="scard">
+          <div class="slabel">Task progress</div>
+          <div class="big" id="sumPct">—</div>
+          <div class="pbar" id="sumBar"></div>
+          <div class="legend">
+            <span class="l-done">Done</span><span class="l-working">Working</span>
+            <span class="l-queued">Queued</span><span class="l-blocked">Blocked</span>
+          </div>
+        </div>
+        <div class="scard">
+          <div class="slabel">Company</div>
+          <div class="kv" id="sumKv"></div>
+        </div>
+      </section>
+
+      <div id="learning" class="learning"></div>
+
+      <section class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>Status</th><th>Agent</th><th>Current task</th><th>Mode</th><th>Progress</th><th></th></tr>
+          </thead>
+          <tbody id="grid"></tbody>
+        </table>
+        <div class="empty" id="emptyState" style="display:none">No agents yet — give the CEO a goal above and watch the org assemble.</div>
+      </section>
+      <div class="goalstrip" id="goalstrip"></div>
+    </main>
+  </div>
+
+  <!-- chat slide-over -->
+  <div class="over-back" id="chatBack"></div>
+  <div class="panel" id="chatPanel">
+    <div class="phead">
+      <h2>Company channel</h2>
+      <select id="threadFilter"><option value="all">all threads</option></select>
+      <button class="quiet" id="chatClose">Close</button>
+    </div>
+    <div class="pbody" id="msgs"></div>
+    <div class="composer">
+      <select id="msgTarget"><option value="">To CEO / company</option></select>
+      <input id="msgInput" placeholder="Message the company" />
+      <button id="msgBtn" class="primary">Send</button>
     </div>
   </div>
 
-  <div class="drawer-back" id="drawerBack"></div>
-  <div class="drawer" id="drawer"></div>
+  <!-- connections slide-over -->
+  <div class="over-back" id="connBack"></div>
+  <div class="panel" id="connPanel">
+    <div class="phead">
+      <h2>Connections</h2>
+      <button class="quiet" id="connClose">Close</button>
+    </div>
+    <div class="pbody">
+      <div class="conn-note">Connect your accounts so agents do the real thing — each key flips a SIM tag to REAL. Every key you save is immediately <b>live-tested against the provider</b>, so you know it actually works (not just that it is pasted). Keys are saved to your machine only (.env), never shown again, never sent to any model, and never appear in the channel. Full system check: <a href="/setup">/setup</a>.</div>
+      <div id="setupRows"></div>
+    </div>
+  </div>
 
+  <!-- agent drawer -->
+  <div class="over-back" id="drawerBack"></div>
+  <div class="panel" id="drawer"></div>
+
+  <div id="toasts"></div>
+
+  <!-- onboarding wizard -->
   <div class="wizard-back" id="wizardBack"></div>
   <div class="wizard" id="wizard">
-    <h2>👋 LET'S SET UP YOUR COMPANY</h2>
+    <h2>Set up your company</h2>
     <div class="sub">Two minutes. Your answers shape which agents get hired, what they build, and what they already know about your business.</div>
 
     <div class="q">What's your company or idea called?</div>
-    <input type="text" id="wName" placeholder="e.g. Desk & Co" />
+    <input type="text" id="wName" placeholder="e.g. Desk &amp; Co" />
     <div class="q">What do you sell / who do you serve? <small>(your niche)</small></div>
     <input type="text" id="wNiche" placeholder="e.g. minimalist desk accessories" />
 
@@ -189,8 +387,8 @@
       <span class="opt" data-v="email-automation">Automate my emails</span>
       <span class="opt sel" data-v="everything">Everything — I'm a solo founder</span>
     </div>
-    <div class="q">In your own words, what would make this a win for you? <small>(optional)</small></div>
-    <input type="text" id="wObjectiveNote" placeholder="e.g. I want my first 10 products live and a week of social posts" />
+    <div class="q">In your own words, what would make this a win? <small>(optional)</small></div>
+    <input type="text" id="wObjectiveNote" placeholder="e.g. first 10 products live and a week of social posts" />
 
     <div class="q">Do you already have a store?</div>
     <div class="opts" id="wStore">
@@ -208,7 +406,7 @@
       <span class="opt" data-v="brand">Brand / logo</span>
     </div>
 
-    <div class="q">Your starter team <small>(prebuilt lightweight agents — preselected for your objective, tap to change)</small></div>
+    <div class="q">Your starter team <small>(preselected for your objective, tap to change)</small></div>
     <div class="opts" id="wAgents">
       <span class="opt" data-v="research">Research agent</span>
       <span class="opt" data-v="store-builder">Store-builder agent</span>
@@ -217,11 +415,11 @@
       <span class="opt" data-v="analyst">Analyst</span>
     </div>
 
-    <div class="q">Anything the agents should know? <small>(paste notes, product lists, brand voice — becomes their context, scanned like any input)</small></div>
-    <textarea id="wContext" placeholder="e.g. We only sell sustainably-sourced products. Price range $20-80. Tone: warm, direct, no exclamation marks."></textarea>
+    <div class="q">Anything the agents should know? <small>(notes, product lists, brand voice — becomes their context, scanned like any input)</small></div>
+    <textarea id="wContext" placeholder="e.g. We only sell sustainably-sourced products. Price range $20-80. Tone: warm, direct."></textarea>
 
     <div class="actions">
-      <button class="primary" id="wSave">Install my team →</button>
+      <button class="primary" id="wSave">Install my team</button>
       <button id="wSkip">Skip — explore first</button>
     </div>
   </div>
@@ -229,9 +427,37 @@
   <script>
     const state = { agents: new Map(), tasks: new Map(), goals: new Map(), messages: [], escalations: new Map(), runs: [], autonomyMode: "supervised", pendingPlans: [] };
     let openAgentId = null;
+    let chatSeen = 0;
 
     const $ = (id) => document.getElementById(id);
     const esc = (s) => (s ?? "").toString().replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+    // Every button press gets visible feedback — silent failure is what makes
+    // buttons feel broken. api() checks the HTTP result and surfaces errors.
+    function toast(msg, kind) {
+      const el = document.createElement("div");
+      el.className = "toast" + (kind ? " " + kind : "");
+      el.textContent = msg;
+      $("toasts").appendChild(el);
+      setTimeout(() => el.remove(), kind === "err" ? 7000 : 3500);
+    }
+    async function api(path, opts, { quiet } = {}) {
+      let res;
+      try {
+        res = await fetch(path, opts);
+      } catch (err) {
+        toast("Cannot reach the server — is `npm run dev` still running? (" + err.message + ")", "err");
+        throw err;
+      }
+      let data = {};
+      try { data = await res.json(); } catch {}
+      if (!res.ok || data.ok === false || data.error) {
+        const msg = data.error || `Request failed (HTTP ${res.status})`;
+        if (!quiet) toast(msg, "err");
+        return { ...data, ok: false, error: msg };
+      }
+      return data;
+    }
 
     function taskFor(agentId) {
       for (const t of state.tasks.values()) if (t.agentId === agentId) return t;
@@ -241,11 +467,16 @@
     function etaText(t) {
       if (t.status === "done") {
         const secs = t.startedAt && t.finishedAt ? Math.round((new Date(t.finishedAt) - new Date(t.startedAt)) / 1000) : null;
-        return secs != null ? `done in ${secs}s (est ${t.estimateSec}s)` : "done";
+        return secs != null ? `done in ${secs}s` : "done";
       }
-      if (t.status === "pending") return `queued · est ${t.estimateSec}s`;
-      const remaining = Math.max(1, Math.round(t.estimateSec * (1 - t.progress / 100)));
-      return `${Math.round(t.progress)}% · ~${remaining}s left · est ${t.estimateSec}s`;
+      if (t.status === "failed") return "failed";
+      if (t.status === "pending") return `queued · est ${t.estimateSec ?? "?"}s`;
+      const remaining = Math.max(1, Math.round((t.estimateSec ?? 30) * (1 - (t.progress ?? 0) / 100)));
+      // A REAL task can legitimately sit at one percentage while the model
+      // call is in flight — label it "thinking" instead of looking frozen
+      // (the progress bar also pulses while a task runs).
+      const slow = t.mode === "real" ? " · thinking…" : "";
+      return `${Math.round(t.progress ?? 0)}% · ~${remaining}s left${slow}`;
     }
 
     function renderGoals() {
@@ -253,10 +484,33 @@
       $("goalstrip").innerHTML = goals.map(g => {
         const tasks = [...state.tasks.values()].filter(t => t.goalId === g.id);
         const doneN = tasks.filter(t => t.status === "done").length;
-        const est = tasks.reduce((s, t) => s + t.estimateSec, 0);
         const deliverable = g.deliverable ? ` · <a href="${esc(g.deliverable)}" target="_blank">${esc(g.deliverable)}</a>` : "";
-        return `<div><b>${esc(g.id)}</b> [${esc(g.status)}] ${esc(g.text)} · tasks ${doneN}/${tasks.length} · est ${est}s${deliverable}</div>`;
+        return `<div><b>${esc(g.id)}</b> [${esc(g.status)}] ${esc(g.text)} · tasks ${doneN}/${tasks.length}${deliverable}</div>`;
       }).join("");
+    }
+
+    function renderSummary() {
+      const tasks = [...state.tasks.values()];
+      const agents = [...state.agents.values()];
+      const done = tasks.filter(t => t.status === "done").length;
+      const total = tasks.length;
+      const working = tasks.filter(t => t.status === "running").length;
+      const blockedAgents = agents.filter(a => a.status === "blocked").length;
+      const pct = total ? Math.round((done / total) * 100) : 0;
+      $("sumPct").innerHTML = total ? `${pct}%<small>${done}/${total} tasks done</small>` : `—<small>no tasks yet</small>`;
+      const workingPct = total ? (working / total) * 100 : 0;
+      const blockedPct = total ? (blockedAgents / Math.max(total,1)) * 100 : 0;
+      $("sumBar").innerHTML =
+        `<i class="p-done" style="width:${total ? (done/total)*100 : 0}%"></i>` +
+        `<i class="p-working" style="width:${workingPct}%"></i>` +
+        `<i class="p-blocked" style="width:${blockedPct}%"></i>`;
+      const pendingEsc = [...state.escalations.values()].filter(e => !e.resolved).length;
+      const activeGoals = [...state.goals.values()].filter(g => ["clarifying","planning","running"].includes(g.status)).length;
+      $("sumKv").innerHTML = `
+        <div><div class="k">Agents</div><div class="v">${agents.length}</div></div>
+        <div><div class="k">Active goals</div><div class="v">${activeGoals}</div></div>
+        <div><div class="k">Blocked</div><div class="v${blockedAgents ? " red" : ""}">${blockedAgents}</div></div>
+        <div><div class="k">Escalations</div><div class="v${pendingEsc ? " red" : ""}">${pendingEsc}</div></div>`;
     }
 
     function renderDial() {
@@ -269,7 +523,7 @@
       const plans = (state.pendingPlans || []).filter(p => !p.resolved);
       $("plans").innerHTML = plans.map(p => `
         <div class="plan">
-          <h3>📋 ORG PLAN AWAITING APPROVAL (assisted mode) — ${esc(p.goalText)}</h3>
+          <h3>Org plan awaiting approval — ${esc(p.goalText)}</h3>
           <div class="roles">${p.roles.map(r => `${esc(r.name)} — ${esc(r.title)}`).join("<br>")}</div>
           <div class="actions">
             <button class="approve" onclick="resolvePlan('${esc(p.goalId)}','approve-plan')">Approve &amp; hire</button>
@@ -278,14 +532,43 @@
         </div>`).join("");
     }
     async function resolvePlan(goalId, verb) {
-      await fetch(`/${verb}/${goalId}`, { method: "POST" });
+      const r = await api(`/${verb}/${goalId}`, { method: "POST" });
+      if (r.ok !== false) toast(verb === "approve-plan" ? "Plan approved — hiring the org now." : "Plan denied — no agents hired.", "ok");
+    }
+
+    // The CEO's clarifying question used to live only inside the (closed)
+    // Channel panel — you launched a goal and the screen looked dead. Surface
+    // every unanswered question as a banner with a reply box right on the page.
+    function renderAsks() {
+      const asking = [...state.goals.values()].filter(g => g.status === "clarifying");
+      $("asks").innerHTML = asking.map(g => {
+        const q = [...state.messages].reverse().find(m => m.threadId === g.threadId && m.kind === "question" && m.from === "ceo");
+        return `
+        <div class="ask">
+          <h3>The CEO has a question before hiring — reply below to continue</h3>
+          <div class="content">${esc(q ? q.body : "Which niche, and roughly how many products?")}</div>
+          <div class="actions">
+            <input id="ask-${esc(g.id)}" placeholder='e.g. "trending sneakers, 3 products"'
+              onkeydown="if(event.key==='Enter')answerAsk('${esc(g.id)}')" />
+            <button class="primary" onclick="answerAsk('${esc(g.id)}')">Answer the CEO</button>
+          </div>
+        </div>`;
+      }).join("");
+    }
+    async function answerAsk(goalId) {
+      const input = $("ask-" + goalId);
+      if (!input || !input.value.trim()) return;
+      const goal = state.goals.get(goalId);
+      const r = await api("/message", { method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ threadId: goal ? goal.threadId : goalId, body: input.value.trim() }) });
+      if (r.ok !== false) { input.value = ""; toast("Answer sent — the CEO is drafting the org.", "ok"); }
     }
 
     function renderEscalations() {
       const pending = [...state.escalations.values()].filter(e => !e.resolved);
       $("escalations").innerHTML = pending.map(e => `
         <div class="esc">
-          <h3>⚠ SECURITY ESCALATION ${esc(e.id)} — ${esc(e.agentId)} blocked, awaiting your decision</h3>
+          <h3>Security escalation ${esc(e.id)} — ${esc(e.agentId)} blocked, awaiting your decision</h3>
           <div class="cats">detections: ${esc((e.scan?.categories || []).join(", "))}</div>
           <div class="content">${esc(e.reason)} · "${esc((e.content||"").slice(0,220))}"</div>
           <div class="actions">
@@ -295,46 +578,60 @@
         </div>`).join("");
     }
     async function resolveEsc(id, verb) {
-      await fetch(`/${verb}/${id}`, { method: "POST" });
+      const r = await api(`/${verb}/${id}`, { method: "POST" });
+      if (r.ok !== false) toast(verb === "approve" ? "Approved — the agent continues." : "Denied — content quarantined.", "ok");
     }
 
     function renderLearning() {
-      const runs = state.runs || [];
+      // Dedupe by runId: the SSE "run" event and the snapshot can both carry
+      // the same run — without this, every reconnect doubled the strip.
+      const seen = new Set();
+      const runs = (state.runs || []).filter(r => r && r.runId && !seen.has(r.runId) && seen.add(r.runId));
       if (runs.length === 0) { $("learning").innerHTML = ""; return; }
       const byNiche = {};
       for (const r of runs) (byNiche[r.nicheKey] = byNiche[r.nicheKey] || []).push(r);
       const rows = Object.values(byNiche).map(group => {
         return group.map((r, i) => {
           const n = i + 1;
-          if (i === 0) return `<div class="row"><b>${esc(r.niche)}</b> · run ${n}: full research, ${r.products.length} findings, total ${r.totalSec}s</div>`;
+          const found = (r.products || []).length;
+          if (i === 0) return `<div class="row"><b>${esc(r.niche)}</b> · run ${n}: full research, ${found} findings, total ${r.totalSec}s</div>`;
           const base = group[0];
           const saved = Math.max(0, base.totalSec - r.totalSec);
-          return `<div class="row faster">↳ run ${n}: reused ${r.products.length} findings from ${esc(r.reusedFrom||base.runId)} — 0 re-scrapes, 0 research API calls · total ${r.totalSec}s vs ${base.totalSec}s (${saved}s faster)</div>`;
+          return `<div class="row faster">run ${n}: reused ${found} findings from ${esc(r.reusedFrom||base.runId)} — 0 re-scrapes, 0 research API calls · ${r.totalSec}s vs ${base.totalSec}s (${saved}s faster)</div>`;
         }).join("");
       }).join("");
-      $("learning").innerHTML = `<h3>🧠 RUN MEMORY — learns per niche, gets faster on repeat</h3>${rows}`;
+      $("learning").innerHTML = `<h3>Run memory — learns per niche, gets faster on repeat</h3>${rows}`;
     }
 
     function renderGrid() {
-      const grid = $("grid");
-      grid.innerHTML = "";
-      for (const a of state.agents.values()) {
+      const rows = [];
+      const agents = [...state.agents.values()];
+      agents.sort((a, b) => (a.spec?.role === "ceo" ? -1 : b.spec?.role === "ceo" ? 1 : 0));
+      for (const a of agents) {
         const t = taskFor(a.id);
-        const card = document.createElement("div");
-        card.className = "card" + (a.spec?.role === "ceo" ? " ceo" : "");
-        card.onclick = () => openDrawer(a.id);
-        const modeTag = t?.mode ? `<span class="mode ${t.mode}">${t.mode === "sim" ? "SIMULATION" : "REAL"}</span>` : "";
-        card.innerHTML = `
-          <div class="role">${esc(a.spec?.role)}${modeTag}</div>
-          <strong>${esc(a.id)}</strong> <span class="status ${esc(a.status)}">${esc(a.status)}</span>
-          <div class="email">${esc(a.identity?.email ?? "")}</div>
-          <div class="objective">${esc(a.spec?.objective ?? "")}</div>
-          ${t ? `<div class="bar"><div style="width:${t.progress}%"></div></div><div class="eta">${esc(etaText(t))}</div>` : ""}
-          ${a.status === "blocked" ? `<button onclick="event.stopPropagation();fetch('/approve/${a.id}',{method:'POST'})">Approve</button>
-             <button class="deny" onclick="event.stopPropagation();fetch('/deny/${a.id}',{method:'POST'})">Deny</button>` : ""}
-          <div class="log">${(a.log ?? []).slice(-4).map(e => `${e.ts.slice(11,19)} ${esc(e.message)}`).join("<br>")}</div>`;
-        grid.appendChild(card);
+        const isCeo = a.spec?.role === "ceo";
+        const mode = t?.mode ? (t.mode === "sim"
+          ? `<span class="mode-sim">SIM</span>` : `<span class="mode-real">REAL</span>`) : "";
+        rows.push(`
+          <tr onclick="openDrawer('${esc(a.id)}')">
+            <td class="st ${esc(a.status)}"><i></i>${esc(a.status)}</td>
+            <td>
+              <div class="aname">${esc(a.id)}${isCeo ? '<span class="ceo-tag">CEO</span>' : ""}</div>
+              <div class="arole">${esc(a.spec?.role ?? "")}${a.identity?.email ? " · " + esc(a.identity.email) : ""}</div>
+            </td>
+            <td>
+              ${t ? `<div class="ttitle">${esc(t.title)}</div><div class="tbar${t.status === "running" ? " running" : ""}"><i style="width:${t.progress}%"></i></div>`
+                  : `<div class="ttitle">${esc(a.spec?.objective ?? "")}</div>`}
+            </td>
+            <td>${mode}</td>
+            <td class="eta">${t ? esc(etaText(t)) : ""}</td>
+            <td class="rowact">${a.status === "blocked" ? `
+              <button class="approve" onclick="event.stopPropagation();resolveEsc('${esc(a.id)}','approve')">Approve</button>
+              <button class="deny" onclick="event.stopPropagation();resolveEsc('${esc(a.id)}','deny')">Deny</button>` : ""}</td>
+          </tr>`);
       }
+      $("grid").innerHTML = rows.join("");
+      $("emptyState").style.display = agents.length ? "none" : "block";
     }
 
     function renderChat() {
@@ -349,6 +646,9 @@
           <span class="body">${esc(m.body)}</span>
         </div>`).join("");
       if (stick) el.scrollTop = el.scrollHeight;
+      const unread = Math.max(0, state.messages.length - chatSeen);
+      $("chatCount").textContent = $("chatPanel").classList.contains("open") || unread === 0 ? "" : String(unread);
+      if ($("chatPanel").classList.contains("open")) chatSeen = state.messages.length;
     }
 
     function renderSelectors() {
@@ -359,15 +659,29 @@
       const mt = $("msgTarget");
       const curT = mt.value;
       const agents = [...state.agents.values()].filter(a => a.spec?.role !== "ceo");
-      mt.innerHTML = `<option value="">→ CEO / company</option>` + agents.map(a => `<option ${a.id===curT?"selected":""} value="${esc(a.id)}">→ ${esc(a.id)}</option>`).join("");
+      mt.innerHTML = `<option value="">To CEO / company</option>` + agents.map(a => `<option ${a.id===curT?"selected":""} value="${esc(a.id)}">To ${esc(a.id)}</option>`).join("");
     }
+
+    // ---- slide-over helpers ----
+    function openPanel(panelId, backId) { $(panelId).classList.add("open"); $(backId).classList.add("open"); }
+    function closePanel(panelId, backId) { $(panelId).classList.remove("open"); $(backId).classList.remove("open"); }
+    $("chatToggle").onclick = () => { openPanel("chatPanel", "chatBack"); chatSeen = state.messages.length; renderChat(); };
+    $("chatClose").onclick = () => closePanel("chatPanel", "chatBack");
+    $("chatBack").onclick = () => closePanel("chatPanel", "chatBack");
+    $("connToggle").onclick = () => openPanel("connPanel", "connBack");
+    $("connClose").onclick = () => closePanel("connPanel", "connBack");
+    $("connBack").onclick = () => closePanel("connPanel", "connBack");
 
     function openDrawer(agentId) {
       openAgentId = agentId;
       renderDrawer();
-      $("drawer").classList.add("open");
-      $("drawerBack").classList.add("open");
+      openPanel("drawer", "drawerBack");
     }
+    function closeDrawer() {
+      openAgentId = null;
+      closePanel("drawer", "drawerBack");
+    }
+    $("drawerBack").onclick = closeDrawer;
 
     function renderDrawer() {
       if (!openAgentId) return;
@@ -376,73 +690,92 @@
       const t = taskFor(a.id);
       const msgs = state.messages.filter(m => m.from === a.id || m.to === a.id);
       $("drawer").innerHTML = `
-        <button style="float:right" onclick="closeDrawer()">close</button>
-        <h2>${esc(a.id)} <span class="status ${esc(a.status)}">${esc(a.status)}</span></h2>
-        <div class="email">${esc(a.identity?.email ?? "")} · spawned by ${esc(a.parent)}</div>
-        ${t ? `<div class="bar"><div style="width:${t.progress}%"></div></div><div class="eta">${esc(t.title)} — ${esc(etaText(t))}</div>` : ""}
-        <div class="section">objective</div>
-        <div class="objective">${esc(a.spec?.objective)}</div>
-        <div class="section">messages (${msgs.length})</div>
-        ${msgs.map(m => `<div class="msg ${esc(m.kind)}"><span class="who ${esc(m.from)}">${esc(m.from)}</span>${m.to ? ` <span class="arrow">→ ${esc(m.to)}</span>` : ""}: <span class="body">${esc(m.body)}</span></div>`).join("") || '<div class="dlog">none yet</div>'}
-        <div class="composer" style="padding:0.6rem 0">
-          <input id="drawerMsg" placeholder="Message ${esc(a.id)} directly…" />
-          <button onclick="sendDrawerMsg('${esc(a.id)}')">Send</button>
+        <div class="phead">
+          <h2>${esc(a.id)}</h2>
+          <span class="st ${esc(a.status)}" style="font-size:0.78rem"><i></i>${esc(a.status)}</span>
+          <button class="quiet" onclick="closeDrawer()">Close</button>
         </div>
-        <div class="section">event log</div>
-        <div class="dlog">${(a.log ?? []).map(e => `<div>${e.ts.slice(11,19)} [${esc(e.kind)}] ${esc(e.message)}</div>`).join("")}</div>
-        <div class="section">spec · identity</div>
-        <pre>${esc(JSON.stringify({ spec: a.spec, identity: a.identity, sandbox: a.sandbox }, null, 2))}</pre>`;
+        <div class="pbody">
+          <div class="email">${esc(a.identity?.email ?? "")} · spawned by ${esc(a.parent)}</div>
+          ${t ? `<div class="tbar" style="max-width:none"><i style="width:${t.progress}%"></i></div><div class="stat-line">${esc(t.title)} — ${esc(etaText(t))}</div>` : ""}
+          <div class="section">Objective</div>
+          <div class="objective">${esc(a.spec?.objective)}</div>
+          <div class="section">Messages (${msgs.length})</div>
+          ${msgs.map(m => `<div class="msg ${esc(m.kind)}"><span class="who ${esc(m.from)}">${esc(m.from)}</span>${m.to ? ` <span class="arrow">→ ${esc(m.to)}</span>` : ""}: <span class="body">${esc(m.body)}</span></div>`).join("") || '<div class="dlog">none yet</div>'}
+          <div class="composer" style="padding:0.6rem 0">
+            <input id="drawerMsg" placeholder="Message ${esc(a.id)} directly" />
+            <button class="primary" onclick="sendDrawerMsg('${esc(a.id)}')">Send</button>
+          </div>
+          <div class="section">Event log</div>
+          <div class="dlog">${(a.log ?? []).map(e => `<div>${e.ts.slice(11,19)} [${esc(e.kind)}] ${esc(e.message)}</div>`).join("")}</div>
+          <div class="section">Spec · identity</div>
+          <pre>${esc(JSON.stringify({ spec: a.spec, identity: a.identity, sandbox: a.sandbox }, null, 2))}</pre>
+        </div>`;
     }
-
-    function closeDrawer() {
-      openAgentId = null;
-      $("drawer").classList.remove("open");
-      $("drawerBack").classList.remove("open");
-    }
-    $("drawerBack").onclick = closeDrawer;
 
     async function sendDrawerMsg(agentId) {
       const input = $("drawerMsg");
       if (!input.value.trim()) return;
       const t = taskFor(agentId);
-      await fetch("/message", { method: "POST", headers: {"Content-Type":"application/json"},
+      const r = await api("/message", { method: "POST", headers: {"Content-Type":"application/json"},
         body: JSON.stringify({ threadId: t ? t.goalId : "company", to: agentId, body: input.value }) });
-      input.value = "";
+      if (r.ok !== false) input.value = "";
     }
 
-    // --- BUSINESS SETUP (guided credentials; booleans only, values write-only) ---
+    // --- CONNECTIONS (guided credentials; booleans only, values write-only) ---
     let setupState = [];
     function renderSetup() {
       const connected = setupState.filter(i => i.connected).length;
-      $("setupCount").textContent = `${connected}/${setupState.length} connected`;
+      $("setupCount").textContent = setupState.length ? `${connected}/${setupState.length}` : "";
       $("setupRows").innerHTML = setupState.map(i => `
         <div class="integ">
-          <span class="dot ${i.connected ? "on" : "off"}">●</span>
-          <span class="ilabel">${esc(i.label)}</span>
-          <a href="${esc(i.link)}" target="_blank">Get it here →</a>
-          ${i.connected ? '<span class="kset">connected ✓</span>' : ""}
+          <div class="irow">
+            <span class="dot ${i.connected ? "on" : ""}"></span>
+            <span class="ilabel">${esc(i.label)}</span>
+            <a href="${esc(i.link)}" target="_blank">Get it</a>
+            ${i.connected ? '<span class="kset">connected</span>' : ""}
+          </div>
           <div class="unlocks">${esc(i.unlocks)}</div>
           ${i.hint && !i.connected ? `<div class="hint">${esc(i.hint)}</div>` : ""}
-          ${i.provisioning ? `<div class="hint">⛓ ${esc(i.provisioning)}</div>` : ""}
+          ${i.provisioning ? `<div class="hint">${esc(i.provisioning)}</div>` : ""}
           ${i.keys.map(k => `
             <div class="keyrow">
               <span class="kname">${esc(k.name)}</span>
-              ${k.set ? '<span class="kset">saved ✓ (paste again to replace)</span>' : ""}
-              <input type="password" placeholder="paste ${k.set ? "new " : ""}value…" data-key="${esc(k.name)}"
-                onkeydown="if(event.key==='Enter')saveKey(this)" autocomplete="off" />
-              <button onclick="saveKey(this.previousElementSibling)">Save</button>
+              ${k.set ? '<span class="kset">saved</span>' : ""}
+              <input type="password" placeholder="paste ${k.set ? "new " : ""}value" data-key="${esc(k.name)}"
+                onkeydown="if(event.key==='Enter')saveKey(this,'${esc(i.id)}')" autocomplete="off" />
+              <button onclick="saveKey(this.previousElementSibling,'${esc(i.id)}')">Save</button>
             </div>`).join("")}
+          ${verifyState[i.id] ? `<div class="verify ${verifyState[i.id].cls}">${esc(verifyState[i.id].msg)}</div>` : ""}
         </div>`).join("");
     }
-    async function saveKey(input) {
+    // Integration id -> doctor check id, so a freshly saved key is verified
+    // with a REAL call immediately. "Saved" and "works" are different facts.
+    const VERIFY_ID = { resend: "key-resend", "brain-anthropic": "key-anthropic", "brain-nvidia": "key-nvidia", shopify: "key-shopify", apify: "key-apify", hiddenlayer: "key-hiddenlayer" };
+    const verifyState = {}; // integration id -> { cls, msg }
+    async function saveKey(input, integId) {
       const value = input.value;
       if (!value.trim()) return;
       input.value = ""; // clear immediately — the value should never linger on screen
-      const res = await fetch("/api/setup", { method: "POST", headers: {"Content-Type":"application/json"},
+      const data = await api("/api/setup", { method: "POST", headers: {"Content-Type":"application/json"},
         body: JSON.stringify({ key: input.dataset.key, value }) });
-      const data = await res.json();
-      if (data.status) { setupState = data.status; renderSetup(); }
-      if (data.error) alert("Could not save: " + data.error);
+      if (data.ok === false) return;
+      if (data.status) { setupState = data.status; }
+      const checkId = VERIFY_ID[integId];
+      if (checkId) {
+        verifyState[integId] = { cls: "busy", msg: "Saved — verifying with a live call…" };
+        renderSetup();
+        try {
+          const rep = await api(`/api/doctor?only=${checkId}`, undefined, { quiet: true });
+          const c = (rep.checks || [])[0];
+          if (c) verifyState[integId] = c.status === "pass"
+            ? { cls: "ok", msg: "✓ Verified — " + c.detail }
+            : { cls: "bad", msg: "✗ Saved, but the live test failed: " + c.detail + (c.fix ? " Fix: " + c.fix : "") };
+        } catch { verifyState[integId] = { cls: "bad", msg: "Saved, but the verify call could not run — check /setup." }; }
+      } else {
+        verifyState[integId] = { cls: "ok", msg: "Saved." };
+      }
+      renderSetup();
     }
     fetch("/api/setup").then(r => r.json()).then(s => { setupState = s; renderSetup(); });
 
@@ -487,17 +820,28 @@
     };
     fetch("/api/company").then(r => r.json()).then(d => {
       if (!d.profile) openWizard();
-      else if (d.suggestedGoal) $("goalInput").placeholder = `Give the CEO a goal… suggested: "${d.suggestedGoal}"`;
+      else if (d.suggestedGoal) $("goalInput").placeholder = `Give the CEO a goal — suggested: "${d.suggestedGoal}"`;
     });
 
-    function renderAll() { renderDial(); renderPlans(); renderEscalations(); renderLearning(); renderGoals(); renderGrid(); renderChat(); renderSelectors(); if (openAgentId) renderDrawer(); }
+    function renderAll() { renderDial(); renderPlans(); renderEscalations(); renderAsks(); renderLearning(); renderGoals(); renderSummary(); renderGrid(); renderChat(); renderSelectors(); if (openAgentId) renderDrawer(); }
 
     // --- actions ---
     $("goalBtn").onclick = async () => {
       const text = $("goalInput").value.trim();
       if (!text) return;
-      $("goalInput").value = "";
-      await fetch("/goal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ text }) });
+      const btn = $("goalBtn");
+      btn.disabled = true; btn.textContent = "Launching…";
+      try {
+        const r = await api("/goal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ text }) });
+        if (r.ok !== false) {
+          $("goalInput").value = "";
+          toast(r.status === "clarifying" ? "The CEO has a question — answer in the banner above." : "Goal launched — the CEO is drafting the org.", "ok");
+        } else {
+          // keep the text so the user can retry without retyping
+        }
+      } finally {
+        btn.disabled = false; btn.textContent = "Launch";
+      }
     };
     $("goalInput").addEventListener("keydown", e => { if (e.key === "Enter") $("goalBtn").click(); });
 
@@ -509,13 +853,28 @@
       const goals = [...state.goals.values()];
       const active = goals.reverse().find(g => ["clarifying","planning","running"].includes(g.status));
       const threadId = to ? (taskFor(to)?.goalId ?? "company") : (active ? active.threadId : "company");
-      await fetch("/message", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ threadId, to, body: input.value }) });
-      input.value = "";
+      const r = await api("/message", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ threadId, to, body: input.value }) });
+      if (r.ok !== false) input.value = "";
     };
     $("msgInput").addEventListener("keydown", e => { if (e.key === "Enter") $("msgBtn").click(); });
 
-    $("resetBtn").onclick = async () => { await fetch("/reset", { method: "POST" }); };
-    $("attackBtn").onclick = async () => { await fetch("/attack", { method: "POST", headers: {"Content-Type":"application/json"}, body: "{}" }); };
+    // Reset wipes everything — make it a deliberate two-click, not an accident.
+    let resetArmed = null;
+    $("resetBtn").onclick = async () => {
+      const btn = $("resetBtn");
+      if (!resetArmed) {
+        btn.textContent = "Sure? Click again to wipe";
+        resetArmed = setTimeout(() => { btn.textContent = "Reset demo"; resetArmed = null; }, 4000);
+        return;
+      }
+      clearTimeout(resetArmed); resetArmed = null; btn.textContent = "Reset demo";
+      const r = await api("/reset", { method: "POST" });
+      if (r.ok !== false) toast("Demo reset — everything cleared.", "ok");
+    };
+    $("attackBtn").onclick = async () => {
+      const r = await api("/attack", { method: "POST", headers: {"Content-Type":"application/json"}, body: "{}" });
+      if (r.ok !== false) toast("Poisoned document injected — watch the security banner.", "ok");
+    };
     document.querySelectorAll("#dial button").forEach(b => {
       b.onclick = async () => {
         state.autonomyMode = b.dataset.mode; renderDial(); // optimistic
@@ -526,6 +885,9 @@
 
     // --- SSE ---
     function applySnapshot(s) {
+      // History isn't "unread": on the first snapshot, start the unread
+      // counter at the current message count.
+      if (chatSeen === 0) chatSeen = (s.messages || []).length;
       state.agents = new Map(s.agents.map(a => [a.id, a]));
       state.tasks = new Map(s.tasks.map(t => [t.id, t]));
       state.goals = new Map(s.goals.map(g => [g.id, g]));
