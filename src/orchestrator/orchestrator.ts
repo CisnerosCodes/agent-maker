@@ -186,7 +186,12 @@ class Orchestrator extends EventEmitter {
 
     // Recursive intelligence: if we've researched this niche before, recall it
     // and skip the re-scrape. This is what makes run 2 measurably faster.
-    const prior = runMemory.recall(niche);
+    // MEMORY_RETRIEVAL=off disables recall (C5) so the causal test can show the
+    // run-2 delta collapses without the mechanism. Advisory only — retrieval is
+    // context, never hard control flow.
+    const retrievalOff = process.env.MEMORY_RETRIEVAL === "off";
+    const prior = retrievalOff ? undefined : runMemory.recall(niche);
+    if (retrievalOff) bus.post({ threadId: goal.id, from: "ceo", kind: "status", body: "Run-memory retrieval DISABLED (MEMORY_RETRIEVAL=off) — researching from scratch for the causal test." });
     if (prior && prior.products.length > 0) {
       this.recalled.set(goal.id, prior);
       this.research.set(goal.id, prior.products);

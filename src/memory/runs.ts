@@ -37,11 +37,13 @@ class RunMemory {
     }
   }
 
-  // Prior run in the same niche, if any (most recent first).
+  // Prior run in the same niche, if any (most recent first). Exact nicheKey
+  // match ONLY (C4): bidirectional substring made "shoes" recall "shoe rack" —
+  // wrong-niche stale data presented as fresh findings.
   recall(niche: string): RunRecord | undefined {
     const key = normalize(niche);
     if (!key) return undefined;
-    return [...this.runs].reverse().find((r) => r.nicheKey === key || r.nicheKey.includes(key) || key.includes(r.nicheKey));
+    return [...this.runs].reverse().find((r) => r.nicheKey === key);
   }
 
   runNumberFor(niche: string): number {
