@@ -13,6 +13,7 @@ import { escalations } from "../src/security/escalations.js";
 import { heuristicScan } from "../src/security/detect.js";
 import { governance } from "../src/governance/governance.js";
 import { setupStatus, saveEnvVar } from "../src/config/env.js";
+import { companyProfile, saveCompanyProfile, suggestedFirstGoal, STARTER_PACKS } from "../src/config/company.js";
 
 const PORT = Number(process.env.DASHBOARD_PORT ?? 4000);
 const EVALS_DIR = process.env.EVALS_DIR ?? "./data/evals";
@@ -87,6 +88,16 @@ createServer(async (req, res) => {
       res.end(readFileSync(new URL("./evals.html", import.meta.url)));
     } else if (req.url === "/api/eval-runs") {
       json(res, evalRuns());
+    } else if (req.url === "/api/company" && req.method === "GET") {
+      json(res, { profile: companyProfile(), packs: STARTER_PACKS, suggestedGoal: suggestedFirstGoal() });
+    } else if (req.url === "/api/company" && req.method === "POST") {
+      const input = await body(req);
+      const profile = saveCompanyProfile(input);
+      bus.post({
+        threadId: "company", from: "ceo", kind: "status",
+        body: `Welcome, ${profile.name}. I read your profile: niche "${profile.niche}", objective "${profile.objective}"${profile.hasStore ? `, existing store at ${profile.storeUrl ?? "(URL not given)"}` : profile.wantsStoreSetup ? ", no store yet — we'll set one up" : ""}. Starter team installed: ${profile.starterAgents.join(", ")}. ${profile.hasContext ? "Your context notes are on file — agents will use them. " : ""}Give me a goal when ready — suggested: "${suggestedFirstGoal()}".`,
+      });
+      json(res, { ok: true, profile, suggestedGoal: suggestedFirstGoal() });
     } else if (req.url === "/api/setup" && req.method === "GET") {
       // BOOLEANS ONLY — never returns credential values.
       json(res, setupStatus());

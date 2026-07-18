@@ -98,6 +98,20 @@
     .setup .keyrow .kname { font-size: 0.62rem; color: #8a93a6; min-width: 15rem; }
     .setup .keyrow input { flex: 1; font-size: 0.7rem; padding: 0.25rem 0.5rem; }
     .setup .keyrow .kset { font-size: 0.62rem; color: #5ff59a; }
+    .wizard-back { position: fixed; inset: 0; background: rgba(4,6,10,0.82); display: none; z-index: 40; }
+    .wizard { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); width: min(680px, 94vw); max-height: 88vh; overflow-y: auto; background: #0e131c; border: 1px solid #3a4a66; border-radius: 10px; padding: 1.3rem 1.5rem; display: none; z-index: 41; }
+    .wizard.open, .wizard-back.open { display: block; }
+    .wizard h2 { margin: 0 0 0.2rem; font-size: 1rem; letter-spacing: 0.06em; }
+    .wizard .sub { font-size: 0.7rem; color: #8a93a6; margin-bottom: 1rem; }
+    .wizard .q { font-size: 0.75rem; color: #d6deeb; margin: 0.9rem 0 0.35rem; }
+    .wizard .q small { color: #6b7590; }
+    .wizard input[type=text], .wizard textarea { width: 100%; }
+    .wizard textarea { background: #10151f; color: inherit; border: 1px solid #2a3040; border-radius: 6px; padding: 0.45rem 0.6rem; font-family: inherit; font-size: 0.74rem; min-height: 4.5rem; }
+    .wizard .opts { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+    .wizard .opt { border: 1px solid #2a3040; border-radius: 999px; padding: 0.25rem 0.7rem; font-size: 0.7rem; color: #9aa5bd; cursor: pointer; user-select: none; }
+    .wizard .opt.sel { border-color: #61c3ff; color: #cfeaff; background: #14293a; }
+    .wizard .actions { display: flex; gap: 0.6rem; margin-top: 1.1rem; }
+    .wizard .actions .primary { border-color: #2f7a4b; color: #b8e986; }
     .drawer-back { position: fixed; inset: 0; background: rgba(4,6,10,0.6); display: none; }
     .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 92vw); background: #0e131c; border-left: 1px solid #2a3040; padding: 1.2rem; overflow-y: auto; display: none; }
     .drawer.open, .drawer-back.open { display: block; }
@@ -156,6 +170,61 @@
 
   <div class="drawer-back" id="drawerBack"></div>
   <div class="drawer" id="drawer"></div>
+
+  <div class="wizard-back" id="wizardBack"></div>
+  <div class="wizard" id="wizard">
+    <h2>👋 LET'S SET UP YOUR COMPANY</h2>
+    <div class="sub">Two minutes. Your answers shape which agents get hired, what they build, and what they already know about your business.</div>
+
+    <div class="q">What's your company or idea called?</div>
+    <input type="text" id="wName" placeholder="e.g. Desk & Co" />
+    <div class="q">What do you sell / who do you serve? <small>(your niche)</small></div>
+    <input type="text" id="wNiche" placeholder="e.g. minimalist desk accessories" />
+
+    <div class="q">What do you want to get out of this? <small>(pick one — this picks your starter team)</small></div>
+    <div class="opts" id="wObjective">
+      <span class="opt" data-v="store">Launch / grow a store</span>
+      <span class="opt" data-v="marketing">Marketing only</span>
+      <span class="opt" data-v="research">Market research</span>
+      <span class="opt" data-v="email-automation">Automate my emails</span>
+      <span class="opt sel" data-v="everything">Everything — I'm a solo founder</span>
+    </div>
+    <div class="q">In your own words, what would make this a win for you? <small>(optional)</small></div>
+    <input type="text" id="wObjectiveNote" placeholder="e.g. I want my first 10 products live and a week of social posts" />
+
+    <div class="q">Do you already have a store?</div>
+    <div class="opts" id="wStore">
+      <span class="opt" data-v="has">Yes, I have a store</span>
+      <span class="opt sel" data-v="wants">No — set one up for me</span>
+      <span class="opt" data-v="none">No store needed</span>
+    </div>
+    <input type="text" id="wStoreUrl" placeholder="your store URL, e.g. https://mystore.myshopify.com" style="display:none; margin-top:0.4rem" />
+
+    <div class="q">What do you already have? <small>(pick all that apply — agents won't redo what exists)</small></div>
+    <div class="opts" id="wAssets">
+      <span class="opt" data-v="email-domain">Email domain</span>
+      <span class="opt" data-v="socials">Social accounts</span>
+      <span class="opt" data-v="product-list">Product list</span>
+      <span class="opt" data-v="brand">Brand / logo</span>
+    </div>
+
+    <div class="q">Your starter team <small>(prebuilt lightweight agents — preselected for your objective, tap to change)</small></div>
+    <div class="opts" id="wAgents">
+      <span class="opt" data-v="research">Research agent</span>
+      <span class="opt" data-v="store-builder">Store-builder agent</span>
+      <span class="opt" data-v="copywriter">Copywriter agent</span>
+      <span class="opt" data-v="strategist">Marketing strategist</span>
+      <span class="opt" data-v="analyst">Analyst</span>
+    </div>
+
+    <div class="q">Anything the agents should know? <small>(paste notes, product lists, brand voice — becomes their context, scanned like any input)</small></div>
+    <textarea id="wContext" placeholder="e.g. We only sell sustainably-sourced products. Price range $20-80. Tone: warm, direct, no exclamation marks."></textarea>
+
+    <div class="actions">
+      <button class="primary" id="wSave">Install my team →</button>
+      <button id="wSkip">Skip — explore first</button>
+    </div>
+  </div>
 
   <script>
     const state = { agents: new Map(), tasks: new Map(), goals: new Map(), messages: [], escalations: new Map(), runs: [], autonomyMode: "supervised", pendingPlans: [] };
@@ -354,6 +423,7 @@
           ${i.connected ? '<span class="kset">connected ✓</span>' : ""}
           <div class="unlocks">${esc(i.unlocks)}</div>
           ${i.hint && !i.connected ? `<div class="hint">${esc(i.hint)}</div>` : ""}
+          ${i.provisioning ? `<div class="hint">⛓ ${esc(i.provisioning)}</div>` : ""}
           ${i.keys.map(k => `
             <div class="keyrow">
               <span class="kname">${esc(k.name)}</span>
@@ -375,6 +445,50 @@
       if (data.error) alert("Could not save: " + data.error);
     }
     fetch("/api/setup").then(r => r.json()).then(s => { setupState = s; renderSetup(); });
+
+    // --- ONBOARDING WIZARD (company profile intake) ---
+    const PACK_ROLES = { store: ["research","store-builder","copywriter"], marketing: ["research","strategist","copywriter"], research: ["research","analyst"], "email-automation": ["research","copywriter"], everything: ["research","store-builder","copywriter","strategist"] };
+    function pick(containerId, single) {
+      document.querySelectorAll(`#${containerId} .opt`).forEach(o => {
+        o.onclick = () => {
+          if (single) document.querySelectorAll(`#${containerId} .opt`).forEach(x => x.classList.remove("sel"));
+          o.classList.toggle("sel", single ? true : !o.classList.contains("sel"));
+          if (containerId === "wObjective") presetAgents();
+          if (containerId === "wStore") $("wStoreUrl").style.display = o.dataset.v === "has" ? "block" : "none";
+        };
+      });
+    }
+    function selected(containerId) { return [...document.querySelectorAll(`#${containerId} .opt.sel`)].map(o => o.dataset.v); }
+    function presetAgents() {
+      const obj = selected("wObjective")[0] || "everything";
+      const roles = PACK_ROLES[obj] || [];
+      document.querySelectorAll("#wAgents .opt").forEach(o => o.classList.toggle("sel", roles.includes(o.dataset.v)));
+    }
+    pick("wObjective", true); pick("wStore", true); pick("wAssets", false); pick("wAgents", false);
+    presetAgents();
+
+    function openWizard() { $("wizard").classList.add("open"); $("wizardBack").classList.add("open"); }
+    function closeWizard() { $("wizard").classList.remove("open"); $("wizardBack").classList.remove("open"); }
+    $("wSkip").onclick = closeWizard;
+    $("wSave").onclick = async () => {
+      const storeChoice = selected("wStore")[0] || "wants";
+      const res = await fetch("/api/company", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({
+        name: $("wName").value, niche: $("wNiche").value,
+        objective: selected("wObjective")[0] || "everything",
+        objectiveNote: $("wObjectiveNote").value,
+        hasStore: storeChoice === "has", storeUrl: $("wStoreUrl").value,
+        wantsStoreSetup: storeChoice === "wants",
+        assets: selected("wAssets"), starterAgents: selected("wAgents"),
+        context: $("wContext").value,
+      }) });
+      const data = await res.json();
+      closeWizard();
+      if (data.suggestedGoal) { $("goalInput").value = data.suggestedGoal; $("goalInput").focus(); }
+    };
+    fetch("/api/company").then(r => r.json()).then(d => {
+      if (!d.profile) openWizard();
+      else if (d.suggestedGoal) $("goalInput").placeholder = `Give the CEO a goal… suggested: "${d.suggestedGoal}"`;
+    });
 
     function renderAll() { renderDial(); renderPlans(); renderEscalations(); renderLearning(); renderGoals(); renderGrid(); renderChat(); renderSelectors(); if (openAgentId) renderDrawer(); }
 

@@ -11,6 +11,8 @@
 // interface as src/evals/backends.ts) to select/compose roles for off-script
 // goals instead of keyword matching.
 
+import { companyProfile } from "../config/company.js";
+
 export interface RoleTemplate {
   role: string;
   titleFor: (ctx: PlanContext) => string;
@@ -57,8 +59,16 @@ export const PLAYBOOKS: Playbook[] = [
       research,
       {
         role: "store-builder",
-        titleFor: () => "Build: products & collections in the dev store",
-        objectiveFor: () => "Create products, collections and theme settings in the Shopify dev store from research output",
+        titleFor: () => {
+          const p = companyProfile();
+          return p?.hasStore ? "Build: add products & collections to YOUR store" : "Build: products & collections in the dev store";
+        },
+        objectiveFor: () => {
+          const p = companyProfile();
+          return p?.hasStore
+            ? `Add products, collections and theme settings to the existing store${p.storeUrl ? ` at ${p.storeUrl}` : ""} from research output`
+            : "Create products, collections and theme settings in the Shopify dev store from research output";
+        },
         tools: ["shopify-admin"], credentials: ["SHOPIFY_ADMIN_TOKEN"], policyTemplate: "worker-storebuilder.yaml",
         estimateSec: 40, dependsOn: [0], reasoning: "low", // mostly templated tool calls
       },

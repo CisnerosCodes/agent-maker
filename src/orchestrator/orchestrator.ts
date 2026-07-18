@@ -15,6 +15,7 @@ import { workerMode, runResearch, runStoreBuilder, runCopywriter, gateOrEscalate
 import { escalations } from "../security/escalations.js";
 import { runMemory, type RunRecord } from "../memory/runs.js";
 import { missingFor } from "../config/env.js";
+import { companyProfile } from "../config/company.js";
 import { matchPlaybook } from "../roles/library.js";
 
 const CEO_ID = "ceo-01";
@@ -181,9 +182,20 @@ class Orchestrator extends EventEmitter {
 
   private async plan(goal: Goal) {
     const roles = this.rolesFor(goal);
-    const niche = (goal.text.match(/\bfor\b\s+(.+?)(?:\s*—|$)/i)?.[1] ?? goal.text.split("—").pop() ?? "the target market").trim();
+    const profile = companyProfile();
+    const niche = (goal.text.match(/\bfor\b\s+(.+?)(?:\s*—|$)/i)?.[1] ?? profile?.niche ?? goal.text.split("—").pop() ?? "the target market").trim();
     this.niche.set(goal.id, niche);
     this.runNumber.set(goal.id, runMemory.runNumberFor(niche));
+
+    // Company-aware planning: acknowledge what they already have so the org
+    // works WITH their business instead of assuming a blank one.
+    if (profile) {
+      const notes: string[] = [];
+      if (profile.hasStore && roles.some((r) => r.spec.role === "store-builder"))
+        notes.push(`you already have a store${profile.storeUrl ? ` (${profile.storeUrl})` : ""} — the store-builder will ADD to it, not start over (paste its admin token in BUSINESS SETUP to make that real)`);
+      if (profile.hasContext) notes.push("your context notes are on file and will inform research");
+      if (notes.length) bus.post({ threadId: goal.id, from: "ceo", kind: "status", body: `Noted from your company profile: ${notes.join("; ")}.` });
+    }
 
     // Guided setup: tell the operator up front which credentials would make
     // this run fully real, with links — then proceed honestly either way.
