@@ -1,0 +1,24 @@
+services:
+  app:
+    build: .
+    ports:
+      - "4000:4000"
+    env_file:
+      - .env
+    environment:
+      - DASHBOARD_PORT=4000
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env:ro
+    restart: unless-stopped
+
+  # Optional: run evals in a separate container
+  eval:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    command: npm run eval -- --backend cli --models haiku --trials 1
+    profiles:
+      - eval
