@@ -12,6 +12,8 @@ import { registry } from "../registry/registry.js";
 import { createAgent } from "../factory/factory.js";
 import { workerMode, runResearch, runStoreBuilder, runCopywriter, gateOrEscalate, type Product } from "../factory/worker.js";
 import { escalations } from "../security/escalations.js";
+import { runMemory, type RunRecord } from "../memory/runs.js";
+import { matchPlaybook } from "../roles/library.js";
 
 const CEO_ID = "ceo-01";
 const TICK_MS = 1200;
@@ -31,6 +33,8 @@ class Orchestrator extends EventEmitter {
   private research = new Map<string, Product[]>();     // goalId -> research output
   private realRunning = new Set<string>();            // task ids executing a real worker
   private lastResearchId?: string;                    // most recent research agent (attack target)
+  private recalled = new Map<string, RunRecord>();    // goalId -> prior run being reused
+  private runNumber = new Map<string, number>();      // goalId -> run number for its niche
 
   constructor() {
     super();
@@ -38,7 +42,7 @@ class Orchestrator extends EventEmitter {
   }
 
   snapshot() {
-    return { goals: [...this.goals.values()], tasks: [...this.tasks.values()] };
+    return { goals: [...this.goals.values()], tasks: [...this.tasks.values()], runs: runMemory.all() };
   }
 
   // Red-team: feed a poisoned document to the research agent's ingestion gate.
@@ -130,51 +134,50 @@ class Orchestrator extends EventEmitter {
     return [...this.goals.values()].some((g) => g.status === "clarifying" || g.status === "planning" || g.status === "running");
   }
 
-  // --- planning (scripted brain; swap for a ModelBackend call later) ---
+  // --- planning: select a playbook from the role library, instantiate roles ---
+  // (keyword match today; swap matchPlaybook for a ModelBackend classifier to
+  //  compose roles for off-script goals.)
 
   private rolesFor(goal: Goal): PlannedRole[] {
-    // Niche: prefer "for X", else the clarification answer (text after the last
-    // "—", first comma-chunk), else a generic fallback.
     const forMatch = goal.text.match(/\bfor\b\s+(.+?)(?:\s*—|$)/i)?.[1];
     const answer = goal.text.split("—").length > 1 ? goal.text.split("—").pop()!.split(",")[0] : undefined;
     const niche = (forMatch ?? answer ?? "the target market").trim();
-    if (/store|shop|shopify|e-?commerce/i.test(goal.text)) {
-      return [
-        {
-          title: `Research: best-selling ${niche} products & competitors`,
-          estimateSec: 28, dependsOnIndex: [],
-          spec: { role: "research", name: `research-${goal.id.slice(5)}`, objective: `Find 10 trending ${niche} products with prices, images and competitor positioning`, tools: ["apify", "web-fetch"], credentials: ["APIFY_TOKEN"], policyTemplate: "worker-research.yaml" },
-        },
-        {
-          title: "Build: products & collections in the dev store",
-          estimateSec: 40, dependsOnIndex: [0],
-          spec: { role: "store-builder", name: `builder-${goal.id.slice(5)}`, objective: "Create products, collections and theme settings in the Shopify dev store from research output", tools: ["shopify-admin"], credentials: ["SHOPIFY_ADMIN_TOKEN"], policyTemplate: "worker-storebuilder.yaml" },
-        },
-        {
-          title: `Copy: descriptions & brand voice for ${niche}`,
-          estimateSec: 22, dependsOnIndex: [0],
-          spec: { role: "copywriter", name: `copy-${goal.id.slice(5)}`, objective: `Write product descriptions and store copy for ${niche}`, tools: [], credentials: [], policyTemplate: "worker-minimal.yaml" },
-        },
-      ];
-    }
-    // Generic goal: research + analyst.
-    return [
-      {
-        title: `Research: ${goal.text.slice(0, 60)}`,
-        estimateSec: 25, dependsOnIndex: [],
-        spec: { role: "research", name: `research-${goal.id.slice(5)}`, objective: `Research and gather sources for: ${goal.text}`, tools: ["web-fetch"], credentials: [], policyTemplate: "worker-research.yaml" },
+    const suffix = goal.id.slice(5);
+    const ctx = { goalText: goal.text, niche, idSuffix: suffix };
+    const playbook = matchPlaybook(goal.text);
+    return playbook.roles.map((r) => ({
+      title: r.titleFor(ctx),
+      estimateSec: r.estimateSec,
+      dependsOnIndex: r.dependsOn,
+      spec: {
+        role: r.role,
+        name: `${r.role}-${suffix}`,
+        objective: r.objectiveFor(ctx),
+        tools: r.tools,
+        credentials: r.credentials,
+        policyTemplate: r.policyTemplate,
       },
-      {
-        title: "Synthesize findings into a brief",
-        estimateSec: 20, dependsOnIndex: [0],
-        spec: { role: "analyst", name: `analyst-${goal.id.slice(5)}`, objective: `Turn research findings into an actionable brief for: ${goal.text}`, tools: [], credentials: [], policyTemplate: "worker-minimal.yaml" },
-      },
-    ];
+    }));
   }
 
   private async plan(goal: Goal) {
     const roles = this.rolesFor(goal);
-    this.niche.set(goal.id, (goal.text.match(/\bfor\b\s+(.+?)(?:\s*—|$)/i)?.[1] ?? goal.text.split("—").pop() ?? "the target market").trim());
+    const niche = (goal.text.match(/\bfor\b\s+(.+?)(?:\s*—|$)/i)?.[1] ?? goal.text.split("—").pop() ?? "the target market").trim();
+    this.niche.set(goal.id, niche);
+    this.runNumber.set(goal.id, runMemory.runNumberFor(niche));
+
+    // Recursive intelligence: if we've researched this niche before, recall it
+    // and skip the re-scrape. This is what makes run 2 measurably faster.
+    const prior = runMemory.recall(niche);
+    if (prior && prior.products.length > 0) {
+      this.recalled.set(goal.id, prior);
+      this.research.set(goal.id, prior.products);
+      bus.post({
+        threadId: goal.id, from: "ceo", kind: "status",
+        body: `Run #${this.runNumber.get(goal.id)} for "${niche}". I already researched this market in ${prior.runId} (${prior.products.length} products, ${prior.researchSec}s). Reusing those findings — skipping re-research.`,
+      });
+    }
+
     bus.post({
       threadId: goal.id, from: "ceo", kind: "status",
       body: `Org plan: ${roles.map((r, i) => `${i + 1}) ${r.spec.name} — ${r.title}`).join("  ")}. Hiring now.`,
@@ -258,10 +261,19 @@ class Orchestrator extends EventEmitter {
     try {
       const niche = this.niche.get(task.goalId) ?? "the target market";
       if (agent.spec.role === "research") {
-        const products = await runResearch(agent, task, niche, onProgress);
+        const prior = this.recalled.get(task.goalId);
+        let products: Product[];
+        if (prior) {
+          // Reuse path: cite prior run, no re-scrape. This is the speedup.
+          products = prior.products;
+          onProgress(60);
+          bus.post({ threadId: task.goalId, from: agent.id, kind: "finding", body: `Reusing ${products.length} products from ${prior.runId} — no re-scrape needed. Prior lead picks still valid.` });
+        } else {
+          products = await runResearch(agent, task, niche, onProgress);
+        }
         this.research.set(task.goalId, products);
         task.outputData = products;
-        task.output = `${products.length} live products`;
+        task.output = prior ? `${products.length} products (reused ${prior.runId})` : `${products.length} products`;
       } else if (agent.spec.role === "store-builder") {
         const url = await runStoreBuilder(agent, task, this.research.get(task.goalId) ?? [], onProgress);
         task.output = url;
@@ -357,9 +369,29 @@ class Orchestrator extends EventEmitter {
     this.emitGoal(goal);
     const ceo = registry.get(CEO_ID);
     if (ceo) { ceo.status = "waiting"; registry.upsert(ceo, `Goal complete: ${goal.text.slice(0, 60)}`); }
+
+    // Write this run back to memory (recursive intelligence) and report the delta.
+    const niche = this.niche.get(goalId) ?? "the target market";
+    const total = this.elapsed(tasks);
+    const prior = this.recalled.get(goalId);
+    const researchTask = tasks.find((t) => registry.get(t.agentId ?? "")?.spec.role === "research");
+    const researchSec = prior ? 0 : this.taskElapsed(researchTask);
+    const rec = runMemory.record({
+      runId: `run-${goalId.slice(5)}`, goalId, niche, goalText: goal.text,
+      products: this.research.get(goalId) ?? [], researchSec, totalSec: total,
+      reusedFrom: prior?.runId,
+    });
+    this.emit("run", rec);
+
+    let learnLine = "";
+    if (prior) {
+      const saved = Math.max(0, prior.totalSec - total);
+      const researchBudget = researchTask?.estimateSec ?? 0;
+      learnLine = ` Learning: reused ${prior.products.length} findings from ${prior.runId} — 0 re-scrapes, 0 research API calls, skipped the ${researchBudget}s research step. Total ${total}s vs ${prior.totalSec}s (${saved}s faster; the wall-clock gap grows with real scrape cost).`;
+    }
     bus.post({
       threadId: goalId, from: "ceo", kind: "status",
-      body: `Goal complete. Deliverable: ${goal.deliverable}. Workforce of ${tasks.length} finished in ${this.elapsed(tasks)}s (est ${tasks.reduce((s, t) => s + t.estimateSec, 0)}s).`,
+      body: `Goal complete (run #${this.runNumber.get(goalId)} for "${niche}"). Deliverable: ${goal.deliverable}. Workforce of ${tasks.length} finished in ${total}s (est ${tasks.reduce((s, t) => s + t.estimateSec, 0)}s).${learnLine}`,
     });
   }
 
@@ -370,14 +402,25 @@ class Orchestrator extends EventEmitter {
     return Math.round((Math.max(...ends) - Math.min(...starts)) / 1000);
   }
 
-  reset() {
+  private taskElapsed(task?: Task): number {
+    if (!task?.startedAt || !task?.finishedAt) return 0;
+    return Math.round((+new Date(task.finishedAt) - +new Date(task.startedAt)) / 1000);
+  }
+
+  // reset(wipeMemory): clears live state. Pass false to KEEP run memory so the
+  // learning delta survives (run 1 then reset then run 2 still shows reuse).
+  // Default true = full fresh demo.
+  reset(wipeMemory = true) {
     if (this.ticker) { clearInterval(this.ticker); this.ticker = undefined; }
     this.tasks.clear();
     this.goals.clear();
     this.niche.clear();
     this.research.clear();
     this.realRunning.clear();
+    this.recalled.clear();
+    this.runNumber.clear();
     escalations.clear();
+    if (wipeMemory) runMemory.clear();
     bus.clear();
     registry.clear();
   }

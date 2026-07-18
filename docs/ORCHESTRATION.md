@@ -89,10 +89,15 @@ exact backend+model is demo-safe.
 The code paths are built and default to sim when a dependency is missing. Add
 the key/box and the dashboard label flips REAL automatically — no code change.
 
-1. **Research worker — REAL NOW.** Fetches live product data over HTTP and
+1. **Research worker — REAL NOW.** Fetches product data over HTTP and
    synthesizes findings (deterministic if no model key; LLM analysis when a
-   brain is available). Set `RESEARCH_SOURCE_URL` to an Apify actor dataset
-   URL to swap the demo source for a real scrape.
+   brain is available). The research card names its source honestly:
+   `sample catalog` / `operator feed` / `live Apify scrape`. Set `APIFY_TOKEN`
+   + `APIFY_ACTOR` (e.g. `junglee/amazon-crawler`, $50 coupon
+   `AITX_NVIDIA_CLAW_HACK`) to swap the sample catalog for a REAL scrape — this
+   is the single highest-credibility upgrade (kills the "why is this hitting a
+   mock API mid-demo" hit) and it makes the learning-loop time delta dramatic
+   because a real scrape takes real seconds that run 2 then skips.
 2. **HiddenLayer on the bus + escalation loop — REAL NOW (heuristic floor).**
    `bus.on(message)` scans every inter-agent message; worker ingestion/prompt/
    response/tool-call all pass through `gateOrEscalate`. Flagged content raises
@@ -102,11 +107,17 @@ the key/box and the dashboard label flips REAL automatically — no code change.
    Demo the climax with the **"inject poisoned doc"** button.
 3. **Shopify — REAL when `SHOPIFY_ADMIN_TOKEN` + `SHOPIFY_STORE_URL` set.**
    Builder POSTs 3 products to the Admin API; the real store URL becomes the
-   goal deliverable. Until then it runs labeled SIMULATION.
-4. **Nemotron — REAL when `NVIDIA_INFERENCE_API_KEY` set + `WORKER_BACKEND=nvidia`.**
-   Worker inference routes through the NVIDIA OpenAI-compatible endpoint. Run
-   one ladder pass for the bounty write-up:
-   `npm run eval -- --backend nvidia --models nvidia/llama-3.1-nemotron-70b-instruct`
+   goal deliverable. Until then it runs labeled SIMULATION. **Verify once:**
+   after setting the tokens, run one goal and confirm 3 products actually
+   appear in the dev store admin before the demo — the code path is written but
+   has not been run against a real store.
+4. **Nemotron — code path REAL, slug UNVERIFIED.** With `NVIDIA_INFERENCE_API_KEY`
+   + `WORKER_BACKEND=nvidia`, worker inference routes through the NVIDIA
+   OpenAI-compatible endpoint. The model slug
+   `nvidia/llama-3.1-nemotron-70b-instruct` is written in code but **has never
+   been called** — confirm it responds before claiming the bounty:
+   `npm run eval -- --backend nvidia --models nvidia/llama-3.1-nemotron-70b-instruct`.
+   That one ladder pass IS the bounty write-up evidence.
 5. **NemoClaw sandbox (Sky's box) — the one contained worker.** Factory step 3
    currently marks the sandbox in-registry; wire the real `nemoclaw onboard`
    spawn and mount the rendered policy (`policies/rendered/<agent>.yaml`, now
