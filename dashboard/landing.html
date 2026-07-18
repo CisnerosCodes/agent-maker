@@ -286,6 +286,43 @@
     .md .tr.done-row .st { color: var(--text-mute); }
     .md .tr.done-row .st i { background: var(--green); }
 
+    /* demo storefront — what the deliverable link opens */
+    .md .storefront {
+      position: absolute; inset: 0; z-index: 7; background: #faf8f4; color: #221c17;
+      font-family: var(--font-display); opacity: 0; visibility: hidden;
+      transform: scale(0.985); transition: opacity .4s ease, transform .4s ease;
+      display: flex; flex-direction: column;
+    }
+    .md .storefront.show { opacity: 1; visibility: visible; transform: none; }
+    .md .sf-head {
+      display: flex; align-items: center; gap: 40px; padding: 22px 48px;
+      border-bottom: 1px solid rgba(34,28,23,0.1);
+    }
+    .md .sf-brand { font-family: var(--font-serif); font-size: 26px; letter-spacing: 0.01em; }
+    .md .sf-nav { display: flex; gap: 26px; font-size: 13.5px; font-weight: 600; color: #6d6258; margin-left: auto; }
+    .md .sf-cart { font-size: 13.5px; font-weight: 700; border: 1px solid rgba(34,28,23,0.2); border-radius: 99px; padding: 8px 18px; }
+    .md .sf-hero { padding: 34px 48px 6px; }
+    .md .sf-hero .t { font-family: var(--font-serif); font-size: 34px; line-height: 1.1; max-width: 22ch; }
+    .md .sf-hero .s { font-size: 13.5px; color: #6d6258; margin-top: 8px; }
+    .md .sf-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; padding: 26px 48px; }
+    .md .sf-card { background: #fff; border: 1px solid rgba(34,28,23,0.08); border-radius: 14px; overflow: hidden; }
+    .md .sf-swatch { height: 150px; display: flex; align-items: center; justify-content: center; }
+    .md .sf-swatch svg { width: 96px; opacity: 0.85; }
+    .md .sf-card .info { padding: 13px 16px 15px; }
+    .md .sf-card .n { font-size: 13.5px; font-weight: 700; }
+    .md .sf-card .p { font-size: 12.5px; color: #6d6258; margin-top: 2px; }
+    .md .sf-card .add {
+      margin-top: 10px; border: 1px solid rgba(34,28,23,0.2); border-radius: 8px;
+      padding: 7px 0; text-align: center; font-size: 12px; font-weight: 700;
+    }
+    .md .sf-card .add.pressed { background: #221c17; color: #faf8f4; }
+    .md .sf-foot {
+      margin-top: auto; display: flex; gap: 22px; justify-content: center; padding: 16px;
+      border-top: 1px solid rgba(34,28,23,0.1); font-family: var(--font-mono);
+      font-size: 10.5px; color: #6d6258;
+    }
+    .md .sf-foot b { color: #221c17; font-weight: 600; }
+
     /* ---------- partner strip ---------- */
     .partners {
       display: flex; align-items: center; gap: clamp(1.4rem, 4vw, 2.9rem); justify-content: center; flex-wrap: wrap;
@@ -474,7 +511,7 @@
     <div class="window-wrap">
       <div class="bee-nest" id="beeNest"></div>
       <div class="window">
-        <div class="chrome"><i></i><i></i><i></i><span class="url">clawcolony.ai/app — Mission Control</span></div>
+        <div class="chrome"><i></i><i></i><i></i><span class="url" id="mdUrl">clawcolony.ai/app — Mission Control</span></div>
         <div class="stage" id="mdStage">
           <!-- live scripted Mission Control demo -->
           <div class="md" id="md" aria-hidden="true">
@@ -527,7 +564,7 @@
               <div class="quarantine" id="mdQuar">payload quarantined <span class="d">· egress denied by default · research-1 resumed</span></div>
               <div class="deliver" id="mdDeliver">
                 <h3>Deliverable ready</h3>
-                <p><span class="link">maya-kicks.myshopify.com</span> — 12 products live with photos, descriptions, and prices. Stripe connected. Maya did the interview; the colony did the rest.</p>
+                <p><span class="link" id="mdDeliverLink">maya-kicks.myshopify.com</span> — 12 products live with photos, descriptions, and prices. Stripe connected. Maya did the interview; the colony did the rest.</p>
               </div>
               <div class="cards">
                 <div class="card">
@@ -615,6 +652,44 @@
                 <span class="install" id="mdWizInstall">Install my team</span>
                 <span class="skip">Skip — explore first</span>
               </div>
+            </div>
+            <div class="storefront" id="mdStore" aria-hidden="true">
+              <div class="sf-head">
+                <div class="sf-brand">Maya's Kicks</div>
+                <div class="sf-nav"><span>Shop</span><span>Our story</span><span>Contact</span></div>
+                <div class="sf-cart" id="mdCart">Cart · 0</div>
+              </div>
+              <div class="sf-hero">
+                <div class="t">Handmade leather sneakers, in small batches.</div>
+                <div class="s">Cut, stitched, and finished by Maya — listed by her colony.</div>
+              </div>
+              <div class="sf-grid">
+                <div class="sf-card">
+                  <div class="sf-swatch" style="background:#efe3d3;color:#8a5a3b">
+                    <svg viewBox="0 0 48 28" fill="currentColor"><path d="M3 21 C3 17.5 6 16.6 10 15.8 L16 14 C19 13 21 11 22 8 C22.5 6.4 24.2 6 25.2 7.2 C27 10 30.5 12 35 13 L41 14.2 C44 14.8 45 16.2 45 18 L45 19.8 L3 21 Z"/><path d="M2.5 24.5 L45.5 24.5 C46.3 23 45.7 21 43.5 21 L4.5 21 C2.6 21 1.8 23 2.5 24.5 Z"/></svg>
+                  </div>
+                  <div class="info"><div class="n">Marfa Trail Low</div><div class="p">Tan leather · $148</div><div class="add">Add to cart</div></div>
+                </div>
+                <div class="sf-card">
+                  <div class="sf-swatch" style="background:#e7d7c3;color:#5a3a24">
+                    <svg viewBox="0 0 48 28" fill="currentColor"><path d="M3 21 C3 17.5 6 16.6 10 15.8 L16 14 C19 13 21 11 22 8 C22.5 6.4 24.2 6 25.2 7.2 C27 10 30.5 12 35 13 L41 14.2 C44 14.8 45 16.2 45 18 L45 19.8 L3 21 Z"/><path d="M2.5 24.5 L45.5 24.5 C46.3 23 45.7 21 43.5 21 L4.5 21 C2.6 21 1.8 23 2.5 24.5 Z"/></svg>
+                  </div>
+                  <div class="info"><div class="n">Presidio High</div><div class="p">Saddle brown · $164</div><div class="add" id="mdAdd2">Add to cart</div></div>
+                </div>
+                <div class="sf-card">
+                  <div class="sf-swatch" style="background:#ded9d2;color:#2b2724">
+                    <svg viewBox="0 0 48 28" fill="currentColor"><path d="M3 21 C3 17.5 6 16.6 10 15.8 L16 14 C19 13 21 11 22 8 C22.5 6.4 24.2 6 25.2 7.2 C27 10 30.5 12 35 13 L41 14.2 C44 14.8 45 16.2 45 18 L45 19.8 L3 21 Z"/><path d="M2.5 24.5 L45.5 24.5 C46.3 23 45.7 21 43.5 21 L4.5 21 C2.6 21 1.8 23 2.5 24.5 Z"/></svg>
+                  </div>
+                  <div class="info"><div class="n">Vespera Court</div><div class="p">Black nubuck · $172</div><div class="add">Add to cart</div></div>
+                </div>
+                <div class="sf-card">
+                  <div class="sf-swatch" style="background:#f2ece0;color:#a98455">
+                    <svg viewBox="0 0 48 28" fill="currentColor"><path d="M3 21 C3 17.5 6 16.6 10 15.8 L16 14 C19 13 21 11 22 8 C22.5 6.4 24.2 6 25.2 7.2 C27 10 30.5 12 35 13 L41 14.2 C44 14.8 45 16.2 45 18 L45 19.8 L3 21 Z"/><path d="M2.5 24.5 L45.5 24.5 C46.3 23 45.7 21 43.5 21 L4.5 21 C2.6 21 1.8 23 2.5 24.5 Z"/></svg>
+                  </div>
+                  <div class="info"><div class="n">Alameda Slip</div><div class="p">Natural cream · $139</div><div class="add">Add to cart</div></div>
+                </div>
+              </div>
+              <div class="sf-foot"><b>maya-kicks.myshopify.com</b><span>Powered by Shopify</span><span>Payments by Stripe</span><span>12 products · listed by listing-1</span></div>
             </div>
             <div class="cursor" id="mdCursor">
               <div class="ring"></div>
@@ -930,7 +1005,10 @@
       $("mdWiz").classList.add("show");
       ["mdWizName", "mdWizNiche", "mdGoal"].forEach(id => { $(id).textContent = ""; $(id).classList.remove("typing"); });
       $("mdWizChip").classList.remove("sel");
-      ["mdPlan", "mdEsc", "mdQuar", "mdDeliver"].forEach(id => $(id).classList.remove("show"));
+      ["mdPlan", "mdEsc", "mdQuar", "mdDeliver", "mdStore"].forEach(id => $(id).classList.remove("show"));
+      $("mdUrl").textContent = "clawcolony.ai/app — Mission Control";
+      $("mdCart").textContent = "Cart · 0";
+      $("mdAdd2").classList.remove("pressed"); $("mdAdd2").textContent = "Add to cart";
       $("mdMemory").style.display = "none";
       $("mdRowCeo").classList.add("hidden-row");
       $("mdRowCeoTask").textContent = "Interviewing the founder — drafting the org";
@@ -1055,7 +1133,20 @@
         $("mdStrip").innerHTML = 'goal <b>complete</b> · deliverable: <span class="g">maya-kicks.myshopify.com</span> · run 1 written to memory · 61,204 tokens scanned · 1 detection';
         moveTo($("mdDeliver"), 180, 10);
       });
-      t(41500, demoLoop); // hold the ending, then run the story again
+      // ── act 6 · open the deliverable: Maya's live store ──
+      t(37000, () => moveTo($("mdDeliverLink")));
+      t(38300, () => click());
+      t(38800, () => {
+        $("mdStore").classList.add("show");
+        $("mdUrl").textContent = "maya-kicks.myshopify.com";
+      });
+      t(40000, () => moveTo($("mdAdd2")));
+      t(41500, () => { click(); $("mdAdd2").classList.add("pressed"); $("mdAdd2").textContent = "Added"; $("mdCart").textContent = "Cart · 1"; });
+      t(45300, () => {
+        $("mdStore").classList.remove("show");
+        $("mdUrl").textContent = "clawcolony.ai/app — Mission Control";
+      });
+      t(46800, demoLoop); // hold the ending, then run the story again
     }
 
     if (reduced) {
@@ -1148,9 +1239,11 @@
         bee.style.transform =
           `translate(${t.x - BEE_W / 2}px, ${t.y - BEE_H / 2}px) scale(${t.s.toFixed(3)}) rotate(${tilt.toFixed(1)}deg)`;
         // Scrub the flight footage: scroll progress IS the playhead. Idle
-        // page -> frozen frame. (0.6s lead-in so the bee is on-screen at top.)
+        // page -> frozen frame. The first ~2s of footage is the bee flying
+        // into frame (mostly a leg) — skip it and scrub the fully-visible
+        // hover segment only.
         if (beeVid.readyState >= 1) {
-          const vt = 0.6 + p * (vidDur - 1.2);
+          const vt = Math.min(vidDur - 0.05, 2.0 + p * (vidDur - 2.4));
           if (Math.abs((beeVid.currentTime || 0) - vt) > 0.04) {
             try { beeVid.currentTime = vt; } catch {}
           }
