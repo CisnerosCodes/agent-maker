@@ -19,7 +19,10 @@ class Bus extends EventEmitter {
 
   constructor() {
     super();
-    if (existsSync(FILE)) this.messages = JSON.parse(readFileSync(FILE, "utf8"));
+    if (existsSync(FILE)) {
+      try { this.messages = JSON.parse(readFileSync(FILE, "utf8")); }
+      catch { console.warn(`[Bus] corrupt ${FILE} — starting with empty message log`); this.messages = []; }
+    }
   }
 
   post(msg: Omit<BusMessage, "id" | "ts">): BusMessage {

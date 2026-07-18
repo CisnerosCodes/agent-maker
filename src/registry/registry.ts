@@ -14,8 +14,12 @@ class Registry extends EventEmitter {
   constructor() {
     super();
     if (existsSync(FILE)) {
-      const arr: AgentRecord[] = JSON.parse(readFileSync(FILE, "utf8"));
-      for (const a of arr) this.agents.set(a.id, a);
+      try {
+        const arr: AgentRecord[] = JSON.parse(readFileSync(FILE, "utf8"));
+        for (const a of arr) this.agents.set(a.id, a);
+      } catch {
+        console.warn(`[Registry] corrupt ${FILE} — starting with empty registry`);
+      }
     }
   }
 

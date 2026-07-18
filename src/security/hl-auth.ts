@@ -6,16 +6,18 @@
 // memory with a 60s safety margin and refresh on demand. gate.ts calls
 // getToken() before each scan and invalidateToken() on a 401 to force one retry.
 
-const AUTH_URL = process.env.HIDDENLAYER_AUTH_URL ?? "https://auth.hiddenlayer.ai";
-const CLIENT_ID = process.env.HIDDENLAYER_CLIENT_ID;
-const CLIENT_SECRET = process.env.HIDDENLAYER_CLIENT_SECRET;
+// Read env at call time (not module load) so credentials pasted into the
+// dashboard's BUSINESS SETUP card take effect without a restart.
+const authUrl = () => process.env.HIDDENLAYER_AUTH_URL ?? "https://auth.hiddenlayer.ai";
+const clientId = () => process.env.HIDDENLAYER_CLIENT_ID;
+const clientSecret = () => process.env.HIDDENLAYER_CLIENT_SECRET;
 
 // True when the OAuth client credentials are present. That is all a real call
 // needs — the project auto-resolves to the account's default-project server-side
 // (verified live 2026-07-18; no hl-project-id header required). When false,
 // gate.ts stays on the heuristic floor (dev fail-open, loud).
 export function hlConfigured(): boolean {
-  return Boolean(CLIENT_ID && CLIENT_SECRET);
+  return Boolean(clientId() && clientSecret());
 }
 
 interface CachedToken {
@@ -43,9 +45,10 @@ export async function getToken(): Promise<string> {
 }
 
 async function fetchToken(): Promise<string> {
-  if (!CLIENT_ID || !CLIENT_SECRET) throw new Error("HiddenLayer credentials not configured");
-  const basic = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64");
-  const res = await fetch(`${AUTH_URL}/oauth2/token?grant_type=client_credentials`, {
+  const id = clientId(), secret = clientSecret();
+  if (!id || !secret) throw new Error("HiddenLayer credentials not configured");
+  const basic = Buffer.from(`${id}:${secret}`).toString("base64");
+  const res = await fetch(`${authUrl()}/oauth2/token?grant_type=client_credentials`, {
     method: "POST",
     headers: {
       Authorization: `Basic ${basic}`,
