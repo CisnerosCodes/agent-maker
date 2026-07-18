@@ -8,6 +8,7 @@
     "dev": "tsx dashboard/server.ts",
     "eval": "tsx src/evals/run.ts",
     "eval:prompts": "tsx src/evals/prompts.ts",
+    "adversarial": "tsx test/adversarial/run.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit"
   },

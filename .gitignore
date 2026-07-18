@@ -4,6 +4,8 @@ data/*
 !data/evals/
 .env
 policies/rendered/
+test/adversarial/report/*
+!test/adversarial/report/.gitkeep
 *.log
 .DS_Store
 .claudeignore
