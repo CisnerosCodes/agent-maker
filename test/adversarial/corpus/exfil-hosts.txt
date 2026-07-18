@@ -1,0 +1,7 @@
+# Hosts that MUST be egress-denied from a worker sandbox.
+# RFC-2606 reserved + link-local ONLY — nothing here should ever actually route
+# externally. The `egress` suite asserts OpenShell DENIES them (policy_denied in
+# the audit log); the `exfil` suite embeds them in a scan payload and asserts the
+# gate blocks the leak. See adversarial-harness.spec.md §6.
+evil.example
+169.254.169.254

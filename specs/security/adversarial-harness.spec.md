@@ -1,6 +1,18 @@
 # Spec — Adversarial Test Harness (`test/adversarial/`)
 
-Status: **spec only, planning mode — no code/files until flag lifted.**
+Status: **SCAFFOLDED 2026-07-18.** `test/adversarial/` exists; `npm run adversarial`
+runs. WIRED (real assertions against `scan()`): `inject`, `clean`, `exfil` (§3 rows
+1-3), and `scanner-down` — an isolated subprocess (`probe-scanner-down.ts`) points the
+HL auth+API hosts at a dead address and asserts the gate fails CLOSED (`flagged` +
+`scanner_unavailable`, never `clean`); empirically confirms code-fix C1. Runs only with
+live HL creds, else self-reports pending. PENDING (declared stubs with per-suite blocking
+reason, gated on §8 open items): `token`, `egress`, `cred-hygiene`, `dual-block`,
+`dispatch-seam`, `learning-causal`. Hard gate = "caught" (verdict ≠ `clean`); a live-HL verdict under
+the intended tier (`flagged` where §7.3 wants `blocked`) is a reported **severity
+shortfall**, not a failure, unless `--strict`. First live run confirmed the ruleset
+gap: current HL flags but does not `block` data-leakage (see the HL-live-API note) —
+`exfil`/`data-sync` cases report `sev~(flagged<blocked)`. Flags: `--smoke` (subset),
+`--strict` (shortfalls + pending → exit 1). Artifacts → `test/adversarial/report/`.
 Owner: Sky (security lane). Consumers: the whole security lane + demo-day reliability.
 Depends on: `hiddenlayer-gate.spec.md` §7 (case list), `poisoned-doc-demo.spec.md` §5 (dual-block cases), `openshell-policy.spec.md` §5 (egress block), `learning-loop.spec.md` §5 (causal proof).
 

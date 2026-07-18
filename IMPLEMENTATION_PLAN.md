@@ -58,6 +58,57 @@ Missing entirely (must be created — grounds the tiers below):
 - `npm run adversarial` harness runner (spec: adversarial-harness)
 - Generic worker executor + handoff contract (spec: worker-capability §2, §4)
 
+**Untracked spec picked up in this review:** `specs/security/nemoclaw-spawn-fixes.spec.md`
+— a fix spec (reviewer: parallel) flagging 3 live gaps in the *already-built* `nemoclaw.ts`
+(F1 fire-and-forget policy set → uncontained sandbox; F2 redact-before-scan blinds the
+outbound exfil gate; F3 no offline test seam for the dispatch boundary). Folded into the
+1.2 status below. Every other spec in `specs/` is referenced by this plan.
+
+---
+
+# STATUS LEDGER (as of 2026-07-18 review)
+
+Legend: ✅ resolved · 🟡 partial (what remains / blocker) · ⬜ to-do.
+
+**Headline:** Sky's security-lane *modules* are built and unit-verified as standalone,
+frozen seams (`gate.ts`, `hl-auth.ts`, `nemoclaw.ts`, `spawn-authority.ts`, the 3 policies,
+`poisoned-shoe-report.md`, `adversarial/run.ts`, `scripts/verify-tier1.ts`). The **integration
+into the live spawn path is the dominant gap**: `src/factory/factory.ts` is still the
+pre-Tier-1 stub (`renderPolicy()` + `sandbox-${id}` + `identity: null as any` + TODO NemoClaw),
+and `orchestrator.ts` calls that stub directly — it never calls `spawnWorker()`, `dispatch()`,
+or `validateSpawn()`. So the broker, the sandbox seam, and the generic executor exist but are
+**not on the critical path yet**. The biggest remaining external blocker is a **live NemoClaw
+sandbox** (Docker + installer), which gates 1.2 go-live, 1.8 Layer 2, and 5 harness suites.
+
+### Tier 0
+- ✅ **0.2 C1 fail-closed** — `gate.ts:64-69` returns `flagged`+`scanner_unavailable`; single `FAIL_OPEN` const defaults false; harness `scanner-down` suite asserts it (live-HL only).
+- ✅ **0.3 C2 escalation timeout** — `worker.ts:120` `ESCALATION_TIMEOUT_MS` (0=off dev), auto-denies fail-closed on timeout.
+- ✅ **0.4 C3 kill per-message HL on bus** — bus path runs heuristics only; authoritative HL stays at the worker/`gateOrEscalate` boundary.
+- ✅ **0.5 real HiddenLayer call** — `hl-auth.ts` OAuth2 client-creds + 60s-margin cache + single-401 retry; `gate.ts` POSTs `/detection/v2/interaction-evaluations`; `mapFindings` = 3-tier verdict. 🟡 *caveat:* live trial ruleset only **flags** (does not **block**) exfil — the injection→flagged / exfil→blocked split is coded but the block tier is unverified until HL console/ruleset access lands (harness reports this as a "severity shortfall," not a pass).
+- 🟡 **0.1 Friday-night onboarding unblockers** — HL key live & scanning ✅. **NemoClaw live spawn NOT verified** (needs Docker Desktop WSL integration + installer, per windows-compat run) ⬜. 10 cross-cutting open items in `security/README.md` partially closed.
+
+### Tier 1
+- ✅ **1.1 escalation loop end-to-end** — `escalations` map + `/approve`/`/deny`, `gateOrEscalate` awaits a real resolvable promise; `injectAttack` drives it through the same path.
+- 🟡 **1.2 NemoClaw spawn seam** — `nemoclaw.ts` implements `spawnWorker`/`dispatch`/`workerStatus` (idempotent, exit-code-distrust, smoke test, redaction). **Remaining:** (a) **not wired** into factory/orchestrator — nothing calls it yet; (b) the 3 `nemoclaw-spawn-fixes.spec.md` bugs (F1/F2/F3) are **unfixed** — F1 (`:192`) and F2 (`:255`/`:269` scan redacted stdout) are live containment holes; (c) cold spawn / in-sandbox blocks need a live sandbox. **Blocker:** live NemoClaw + the fix spec.
+- 🟡 **1.3 OpenShell policies** — `worker-storebuilder.yaml` (path-level `rules`/`deny_rules`, non-trivial), `worker-research.yaml`, `worker-minimal.yaml` all exist. **Remaining:** `openshell policy validate` not run (needs CLI); §5 in-sandbox adversarial BLOCK tests need a live sandbox.
+- ⬜ **1.4 generic worker executor + handoff contract** — `worker.ts` is still the *role-specific* path (`research`/`store-builder`/`copywriter` hardcoded). No `RoleTemplate.promptFor`/`outputSchema` generic executor, no per-edge `outputData` handoff validation. Ghost `strategist`/`analyst` still present (they exist in the authority table). The scan→escalate seam is reusable, but the generic driver is unbuilt.
+- ⬜ **1.5 factory provisioning reconcile** — **not started.** `factory.ts` still has `renderPolicy()`, `sandbox-${id}`, `identity: null as any`, and TODO(Sky) spawn stubs (C12/C13 open). No `issueIdentity→assertRoleSandboxHealthy→mintSession→upsert`, no per-session workdir isolation, no terminate/revoke path.
+- ⬜ **1.6 CEO heartbeat** — **not started.** No separate heartbeat clock and no `lastHandledStatus`. Only the task `ticker` (`orchestrator.ts:291`) exists; nothing reacts autonomously to `blocked`/`failed`/`done` on its own cadence. *(This is the literal "heartbeat-driven" definition in `Hackathon_Docs.md` — see bottom.)*
+- 🟡 **1.7 spawn-authority broker** — `spawn-authority.ts` built (5 reject rules, counter, deny logger, never-throws) and unit-verified by `verify-tier1.ts`. **Remaining:** **not wired** — `orchestrator.plan()` calls `createAgent(spec)` with no `validateSpawn(spec)` gate in front. Part A code done; live enforcement missing.
+- 🟡 **1.8 poisoned-doc demo** — `demo/poisoned-shoe-report.md` exists; Layer 1 (detection) verified offline (`verify-tier1.ts` §1.8); `injectAttack` wired. **Remaining:** Layer 2 (real OpenShell egress block) + dual-block-with-detection-OFF + cred-hygiene grep all need a **live sandbox** (harness `dual-block`/`cred-hygiene` rows pending).
+- ⬜ **1.9 go-live verifications** — all flags currently SIM. Saturday cut decisions per `readiness-and-cut-gates.spec.md`; blockers are the live tokens/sandbox per the flag table.
+
+### Tier 2
+- 🟡 **2.1 adversarial harness** — `npm run adversarial` runs; `inject`/`clean`/`exfil`/`scanner-down` wired. **6 suites pending:** `token`, `egress`, `cred-hygiene`, `dual-block`, `dispatch-seam`, `learning-causal` (each declares its blocking reason; none fake-pass). Unblocking most needs a live sandbox / the F3 test seam.
+- 🟡 **2.2 learning correctness (C4/C5)** — `runs.ts` has exact-match recall + `MEMORY_RETRIEVAL=off` flag + corrupt-file boot guards (commit 79377d3). **Remaining:** the `learning-causal` harness row (memory-ON vs -OFF timed delta) is unwired.
+- ⬜ **2.3 UNCONTAINED badge** — dashboard badge for `local`-mode fallback: to-do.
+- 🟡 **2.4 honesty fixes C6–C17** — C1/C2/C3/C4/C5/C8 done. **C12/C13 open** (they *are* the `factory.ts` stub in 1.5). C14 stale-boot sweep to-do (rides on 1.6 heartbeat).
+- ⬜ **2.5 runbook rehearsal** — `demo-recovery-runbook.spec.md` written; not rehearsed.
+
+### Tier 3 (ladder-gated — build only if Sat 7 PM dry-run passes)
+- ⬜ **3.1 policy-tightening loop**, **3.2 red-team agent**, **3.3 HL-in-egress middleware**, **3.5 live-data feed** — all to-do (spec-only).
+- 🟡 **3.4 vLLM bounty** — eval harness already supports `--backend nvidia` (`OpenAICompatBackend` + `NVIDIA_API_BASE`), so pointing a worker at a vLLM endpoint is a config away. **Remaining:** actually stand up the vLLM/GPU box and get one worker's inference + one ladder pass on it.
+
 ---
 
 # TIER 0 — IMMEDIATE (Friday night + P0 correctness)
