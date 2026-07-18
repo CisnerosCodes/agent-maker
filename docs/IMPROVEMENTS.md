@@ -110,3 +110,21 @@ becomes large with a real Apify scrape (run 2 skips seconds run 1 spent).
    last-wins (fine solo).
 8. **Factory hardening** — `identity: null as any` placeholder; add failure
    states (vault miss → agent `failed`) so a bad spec doesn't crash the CEO.
+
+## 7. Post-hackathon product ideas (from Adrian, 2026-07-18)
+
+1. **Business stats card** — dashboard shows the BUSINESS, not just the agents:
+   followers, subscribers, store sessions, orders, cash flow. Pull from the same
+   connected accounts (Shopify Analytics API, platform APIs) that BUSINESS SETUP
+   already gates. The "agent workforce in a box" becomes "business in a box with
+   a live P&L."
+2. **CAPTCHA / human-verification escalation** — when a worker hits a CAPTCHA or
+   login wall, it must NEVER attempt to bypass it. It raises a normal escalation
+   (same pattern as security escalations): the dashboard shows "your agent needs
+   you to log in / solve a check," with an embedded browser view or a deep link,
+   the human CEO completes it, the agent resumes. Human-in-the-loop by design —
+   bot-detection bypass is out of scope permanently.
+3. **Guided setup extensions** — BUSINESS SETUP (shipped 2026-07-18) now prompts
+   during a run with links. Next: per-key validation pings ("this Shopify token
+   works ✓"), reminders on the goal thread if a needed key stays missing, and a
+   first-run wizard mode.

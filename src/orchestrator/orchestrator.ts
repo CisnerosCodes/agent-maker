@@ -14,6 +14,7 @@ import { createAgent } from "../factory/factory.js";
 import { workerMode, runResearch, runStoreBuilder, runCopywriter, gateOrEscalate, type Product } from "../factory/worker.js";
 import { escalations } from "../security/escalations.js";
 import { runMemory, type RunRecord } from "../memory/runs.js";
+import { missingFor } from "../config/env.js";
 import { matchPlaybook } from "../roles/library.js";
 
 const CEO_ID = "ceo-01";
@@ -183,6 +184,17 @@ class Orchestrator extends EventEmitter {
     const niche = (goal.text.match(/\bfor\b\s+(.+?)(?:\s*—|$)/i)?.[1] ?? goal.text.split("—").pop() ?? "the target market").trim();
     this.niche.set(goal.id, niche);
     this.runNumber.set(goal.id, runMemory.runNumberFor(niche));
+
+    // Guided setup: tell the operator up front which credentials would make
+    // this run fully real, with links — then proceed honestly either way.
+    // Links + labels only; no secret values ever touch the bus.
+    const missing = missingFor(roles.map((r) => r.spec.role));
+    if (missing.length) {
+      bus.post({
+        threadId: goal.id, from: "ceo", kind: "status",
+        body: `While I staff this: to make every step fully REAL, connect in BUSINESS SETUP (left panel): ${missing.map((m) => `${m.label} — get it at ${m.link}`).join("  ·  ")}. I'll run the unconnected parts as labeled simulation and they flip real the moment you paste the key.`,
+      });
+    }
 
     // Recursive intelligence: if we've researched this niche before, recall it
     // and skip the re-scrape. This is what makes run 2 measurably faster.
@@ -380,19 +392,23 @@ class Orchestrator extends EventEmitter {
       .filter((t) => t.goalId === task.goalId && t.dependsOn.includes(task.id))
       .map((t) => t.agentId)
       .filter(Boolean);
+    // C11: sim copy must tell the SAME story as the real path — counts come
+    // from the actual research output, never invented.
+    const found = this.research.get(task.goalId)?.length ?? 0;
+    const built = Math.min(found || 3, 3); // real store-builder creates up to 3 products, 0 collections
     switch (agent.spec.role) {
       case "research":
         return phase === "mid"
-          ? "Signal so far: 3 product clusters trending up 30d; margins look best in the mid-price band. Full shortlist coming."
-          : `Research complete — 10 products with prices, images and positioning posted to this thread${peers.length ? ` for ${peers.join(" & ")}` : ""}.`;
+          ? "Signal so far: product clusters trending up 30d; margins look best in the mid-price band. Full shortlist coming."
+          : `Research complete — ${found || "a shortlist of"} products with prices, images and positioning posted to this thread${peers.length ? ` for ${peers.join(" & ")}` : ""}.`;
       case "store-builder":
         return phase === "mid"
-          ? "6/10 products created, 2 collections up; wiring images and variants now."
-          : "Store populated: 10 products, 3 collections, theme configured. Preview: https://agentcorp-dev.myshopify.com";
+          ? `${Math.max(built - 1, 1)}/${built} products created; wiring images and variants now.`
+          : `Store populated: ${built} products, theme configured. Preview: https://agentcorp-dev.myshopify.com (simulated — connect Shopify in BUSINESS SETUP for a real build)`;
       case "copywriter":
         return phase === "mid"
-          ? "Brand voice locked; 5/10 descriptions drafted."
-          : "Copy delivered for all 10 products plus homepage hero.";
+          ? `Brand voice locked; descriptions in progress for ${found || built} products.`
+          : `Copy delivered for ${found || built} products plus homepage hero.`;
       default:
         return phase === "mid" ? "Halfway — interim notes posted." : `Done: ${task.title}`;
     }
