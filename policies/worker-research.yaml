@@ -1,0 +1,37 @@
+# OpenShell policy — Research worker (TEMPLATE — Sky: verify against real OpenShell schema)
+#
+# The story for judges: this agent HAS a real Apify credential and full agency
+# inside its sandbox, but the boundary lives HERE, not in the agent's goodwill.
+# It can research anything; it cannot exfiltrate, cannot touch other agents'
+# workspaces, and destructive/spend actions need operator approval.
+
+agent: "{{AGENT_ID}}"
+sandbox: "{{SANDBOX_NAME}}"
+
+filesystem:
+  allow:
+    - path: /workspace/{{AGENT_ID}}
+      mode: rw
+  deny:
+    - path: /workspace          # everyone else's workspaces
+      mode: none
+    - path: /vault              # never readable by workers
+      mode: none
+
+network:
+  default: deny
+  allow:
+    - host: api.apify.com       # the credential it was issued, and nothing else
+    - host: integrations.api.hiddenlayer.ai
+    - host: integrate.api.nvidia.com   # Nemotron inference
+  escalate:                     # allow-with-escalation: human-in-the-loop, not a blunt block
+    - host: "*.shopify.com"
+      reason: "Research role has no store access; requires operator approval"
+
+actions:
+  deny:
+    - kind: credential_write    # cannot mint or modify credentials
+    - kind: outbound_email      # research role has no email privileges
+  escalate:
+    - kind: spend               # anything that costs money
+      approver: operator
