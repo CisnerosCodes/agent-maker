@@ -10,6 +10,7 @@ import { bus } from "../src/bus/bus.js";
 import { orchestrator } from "../src/orchestrator/orchestrator.js";
 import { escalations } from "../src/security/escalations.js";
 import { scan } from "../src/security/gate.js";
+import { governance } from "../src/governance/governance.js";
 
 const PORT = Number(process.env.DASHBOARD_PORT ?? 4000);
 const EVALS_DIR = process.env.EVALS_DIR ?? "./data/evals";
@@ -25,7 +26,9 @@ bus.on("message", (msg) => broadcast("message", msg));
 orchestrator.on("task", (task) => broadcast("task", task));
 orchestrator.on("goal", (goal) => broadcast("goal", goal));
 orchestrator.on("run", (run) => broadcast("run", run));
+orchestrator.on("planApproval", (p) => broadcast("planApproval", p));
 escalations.on("escalation", (esc) => broadcast("escalation", esc));
+governance.on("change", (mode) => broadcast("autonomy", { mode }));
 
 // SecurityGate on the bus: scan every message; annotate detections so the
 // dashboard shows the gate is watching inter-agent traffic (depth of
@@ -102,6 +105,21 @@ createServer(async (req, res) => {
       if (!msgBody?.trim()) return json(res, { error: "body required" }, 400);
       const msg = bus.post({ threadId: threadId || "company", from: from || "user", to, kind: "chat", body: msgBody.trim() });
       json(res, msg);
+    } else if (req.url === "/autonomy" && req.method === "POST") {
+      const { mode } = await body(req);
+      try {
+        const set = governance.setMode(mode);
+        bus.post({ threadId: "company", from: "user", kind: "system", body: `Autonomy mode set to ${set}.` });
+        json(res, { ok: true, mode: set });
+      } catch (e: any) {
+        json(res, { error: e.message }, 400);
+      }
+    } else if (req.url?.startsWith("/approve-plan/") && req.method === "POST") {
+      const goalId = req.url.split("/")[2];
+      json(res, { ok: orchestrator.resolvePlan(goalId, true) });
+    } else if (req.url?.startsWith("/deny-plan/") && req.method === "POST") {
+      const goalId = req.url.split("/")[2];
+      json(res, { ok: orchestrator.resolvePlan(goalId, false) });
     } else if (req.url?.startsWith("/reset") && req.method === "POST") {
       // /reset wipes everything; /reset?keepMemory=1 preserves the learning loop.
       const keepMemory = req.url.includes("keepMemory");

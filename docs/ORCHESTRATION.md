@@ -4,17 +4,28 @@ Owner: Adrian. This is the concrete build order for taking the scaffold from
 stubs to the two money demos. It complements `PLAN.md` (the battle plan) —
 this doc is *what to type next*, in priority order.
 
+> Governance/harness decisions (autonomy dial, who-decides-the-agents, 5-module
+> spec schema) live in `docs/HARNESS_AND_GOVERNANCE.md`. Security integration
+> contracts live in `specs/security/` (Sky). This doc is the build order.
+
 ## Where the code is today
 
 | Piece | File | State |
 |---|---|---|
 | Types | `src/types.ts` | done |
 | Registry (JSON + events) | `src/registry/registry.ts` | done, working |
-| Dashboard SSE + org chart | `dashboard/server.ts`, `dashboard/index.html` | working; approve/deny endpoints are no-ops |
-| Eval harness (model testing) | `src/evals/` | **done, working** — see `/evals` on the dashboard |
-| Factory pipeline | `src/factory/factory.ts` | skeleton; policy render + NemoClaw spawn are TODO(Sky) |
+| Message bus | `src/bus/bus.ts` | done — company spine, SSE-streamed |
+| Orchestrator | `src/orchestrator/orchestrator.ts` | done — goal intake, clarifying Qs, task graph, work loop |
+| Dashboard SSE + org chart | `dashboard/server.ts`, `dashboard/index.html` | working; **escalation + plan approve/deny wired**, autonomy dial live |
+| Governance (autonomy dial) | `src/governance/governance.ts` | **done** — assisted/supervised/autonomous, live-toggleable |
+| Eval harness (model testing) | `src/evals/` | **done, working** — see `/evals`; v2 upgrades below |
+| Worker loop (real) | `src/factory/worker.ts` | done — real research fetch + gate-or-escalate; NemoClaw spawn still TODO(Sky) |
+| Run memory (learning loop) | `src/memory/runs.ts` | **done** — recall + reuse + delta |
+| Role library | `src/roles/library.ts` | **done** — playbooks + per-role reasoning defaults |
+| Factory pipeline | `src/factory/factory.ts` | policy render done; NemoClaw spawn is TODO(Sky) |
 | Vault | `src/vault/vault.ts` | identity issue + Resend send done; needs real keys in `.env` |
-| SecurityGate | `src/security/gate.ts` | routing logic done; real HiddenLayer call is TODO(Sky) |
+| SecurityGate | `src/security/gate.ts` | heuristic floor live + HL merge logic; real HiddenLayer OAuth call is TODO(Sky) |
+| Security specs | `specs/security/` | **done (Sky)** — HiddenLayer/NemoClaw/OpenShell contracts + corrections |
 | CEO | `src/ceo/CEO_PROMPT.md` | prompt v1; not yet wired to troublemaker |
 
 ## Model policy (from the eval harness)
@@ -130,3 +141,57 @@ The eval harness doubles as the orchestration's regression suite: after wiring
 the worker loop, point `npm run eval -- --backend nvidia --models <worker-model>`
 at the exact backend workers use. A worker model that can't clear T1–T2 will
 corrupt Factory JSON handoffs — catch it on the ladder, not on stage.
+
+## Nemotron on the eval/worker backend (research-verified)
+
+Confirmed from NVIDIA's OpenAPI reference (not guessed):
+- **Slug:** `nvidia/nemotron-3-super-120b-a12b` (verified valid on
+  `integrate.api.nvidia.com/v1`). Key must start with `nvapi-`.
+- **Reasoning is a request param, not a system-prompt directive.** In the
+  OpenAI-compatible call, ride it in `extra_body`:
+  - high → `{"chat_template_kwargs": {"enable_thinking": true}}`
+  - medium/low → `{"chat_template_kwargs": {"enable_thinking": true, "low_effort": true}}`
+    (optionally `+ "reasoning_budget": <int>` with `temperature:1.0, top_p:0.95`)
+  - off → `{"chat_template_kwargs": {"enable_thinking": false}}`
+  The docs-UI `reasoning_effort: none/low/high` is a page preset, NOT a wire
+  field — don't send it literally.
+- **NemoClaw dispatch takes per-call `--model` / `--thinking`** (forwarded to
+  in-sandbox OpenClaw); model is not fixed at sandbox creation. One residual
+  unknown: how OpenClaw's `--thinking` maps onto Nemotron's `enable_thinking`
+  inside the NVIDIA provider adapter — verify with one live call.
+
+When wiring `reasoning` into `OpenAICompatBackend`, translate the `AgentSpec.reasoning`
+field (`low|medium|high`) to the `extra_body` above. Tiny, non-breaking change.
+
+## Eval ladder v2 — benchmark-anchored scoring (SHIPPED)
+
+The hand-made ladder is now scored on published-benchmark axes instead of binary
+pass/fail. Renders on `/evals` (CSR headline, ISR, pass^k, degradation curve,
+per-constraint detail with axis labels).
+
+1. **CSR + ISR scoring (AgentIF) — SHIPPED.** Graders emit a `ConstraintCheck[]`
+   (`src/evals/types.ts`); the runner computes **CSR** (fraction of a level's
+   constraints met — partial credit) and **ISR** (all met — the strict gate).
+   Single-check levels synthesize one constraint so CSR is defined everywhere.
+   Effect: a near-miss like the ten-constraint level shows "9/10" not "FAIL".
+2. **pass^k (τ²-bench) — SHIPPED.** `--passk K` (default min(3,trials)); the
+   runner reports pass^k = C(passes,k)/C(trials,k) averaged over levels. Most
+   meaningful at `--trials 5`; "pass^3 = X%" is the citable reliability number.
+3. **Conditional-constraint level (AgentIF) — SHIPPED.** `conditional-rules`
+   tests if/then branches whose outcome depends on evaluating a fact — the
+   agentic category IFEval can't express. (Tool-use constraint levels wait on the
+   real worker loop, since they need actual tool calls to grade.)
+4. **Adversarial utility×security split (AgentDojo) — SHIPPED.** The
+   injection-resistance level's checks carry `axis: "utility" | "security"`, so
+   "did the real task" and "resisted the injection" score independently — Sonnet
+   now shows 25% (summarized but leaked CONFIRMED) instead of a flat FAIL.
+5. **Per-tier degradation curve — SHIPPED** (our honest substitute for Meltdown
+   Onset). `tierCsr` shows CSR per tier (format→long-horizon). **Meltdown Onset
+   Point via tool-call entropy is DEFERRED**: it needs multi-step tool-call
+   trajectories, and the ladder is single-shot prompt→response. It becomes
+   applicable once the real worker loop produces tool-call transcripts — score it
+   there, not on the instruction ladder.
+
+Still open (cheap, additive): IFEval gap-fill levels (case control, no-comma,
+start/end anchors, placeholder counts) and IFEval's `category:subtype` ID
+convention so "level N maps to `length_constraints:number_words`" is checkable.

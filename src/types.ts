@@ -20,6 +20,8 @@ export interface AgentSpec {
   credentials: string[];     // vault keys to issue, e.g. ["APIFY_TOKEN"]
   policyTemplate: string;    // filename in policies/, e.g. "worker-research.yaml"
   model?: string;            // Nemotron slug; Factory picks default if omitted
+  reasoning?: "low" | "medium" | "high"; // Nemotron thinking budget (§6.2); maps to
+  //                          chat_template_kwargs.enable_thinking/low_effort. Factory defaults per role.
 }
 
 export interface AgentIdentity {
@@ -66,10 +68,18 @@ export interface BusMessage {
 export interface Goal {
   id: string;
   text: string;
-  status: "clarifying" | "planning" | "running" | "done" | "failed";
+  status: "clarifying" | "planning" | "awaiting-approval" | "running" | "done" | "failed";
   threadId: string;
   createdAt: string;
   deliverable?: string;      // e.g. the store URL
+}
+
+// Pending org-plan approval (assisted autonomy mode): the CEO's proposed
+// workforce, held for human approve/deny before any agent spawns.
+export interface PlanApproval {
+  goalId: string;
+  goalText: string;
+  roles: { name: string; role: string; title: string }[];
 }
 
 export interface Task {

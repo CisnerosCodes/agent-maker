@@ -6,7 +6,8 @@
 
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import type { AgentRecord, AgentSpec, BusMessage, Goal, Task } from "../types.js";
+import type { AgentRecord, AgentSpec, BusMessage, Goal, PlanApproval, Task } from "../types.js";
+import { governance } from "../governance/governance.js";
 import { bus } from "../bus/bus.js";
 import { registry } from "../registry/registry.js";
 import { createAgent } from "../factory/factory.js";
@@ -35,6 +36,8 @@ class Orchestrator extends EventEmitter {
   private lastResearchId?: string;                    // most recent research agent (attack target)
   private recalled = new Map<string, RunRecord>();    // goalId -> prior run being reused
   private runNumber = new Map<string, number>();      // goalId -> run number for its niche
+  private pendingPlans = new Map<string, PlanApproval>();       // goalId -> plan awaiting approval
+  private planResolvers = new Map<string, (ok: boolean) => void>();
 
   constructor() {
     super();
@@ -42,7 +45,21 @@ class Orchestrator extends EventEmitter {
   }
 
   snapshot() {
-    return { goals: [...this.goals.values()], tasks: [...this.tasks.values()], runs: runMemory.all() };
+    return {
+      goals: [...this.goals.values()],
+      tasks: [...this.tasks.values()],
+      runs: runMemory.all(),
+      autonomyMode: governance.mode,
+      pendingPlans: [...this.pendingPlans.values()],
+    };
+  }
+
+  resolvePlan(goalId: string, ok: boolean): boolean {
+    const resolve = this.planResolvers.get(goalId);
+    if (!resolve) return false;
+    this.planResolvers.delete(goalId);
+    resolve(ok);
+    return true;
   }
 
   // Red-team: feed a poisoned document to the research agent's ingestion gate.
@@ -156,6 +173,7 @@ class Orchestrator extends EventEmitter {
         tools: r.tools,
         credentials: r.credentials,
         policyTemplate: r.policyTemplate,
+        reasoning: r.reasoning,
       },
     }));
   }
@@ -178,10 +196,35 @@ class Orchestrator extends EventEmitter {
       });
     }
 
-    bus.post({
-      threadId: goal.id, from: "ceo", kind: "status",
-      body: `Org plan: ${roles.map((r, i) => `${i + 1}) ${r.spec.name} — ${r.title}`).join("  ")}. Hiring now.`,
-    });
+    // Autonomy dial — plan gate. In assisted mode the CEO proposes the org and
+    // WAITS for operator approval before spawning. In supervised/autonomous it
+    // proceeds. Containment is unaffected either way.
+    if (governance.planGate()) {
+      bus.post({
+        threadId: goal.id, from: "ceo", kind: "question",
+        body: `Org plan for approval (assisted mode): ${roles.map((r, i) => `${i + 1}) ${r.spec.name} — ${r.title}`).join("  ")}. Approve to hire.`,
+      });
+      goal.status = "awaiting-approval";
+      this.emitGoal(goal);
+      const approval: PlanApproval = { goalId: goal.id, goalText: goal.text, roles: roles.map((r) => ({ name: r.spec.name, role: r.spec.role, title: r.title })) };
+      this.pendingPlans.set(goal.id, approval);
+      this.emit("planApproval", approval);
+      const ok = await new Promise<boolean>((resolve) => this.planResolvers.set(goal.id, resolve));
+      this.pendingPlans.delete(goal.id);
+      this.emit("planApproval", { ...approval, resolved: true } as any);
+      if (!ok) {
+        goal.status = "failed";
+        this.emitGoal(goal);
+        bus.post({ threadId: goal.id, from: "ceo", kind: "status", body: `Org plan denied by operator — no agents hired.` });
+        return;
+      }
+      bus.post({ threadId: goal.id, from: "ceo", kind: "status", body: `Plan approved — hiring now.` });
+    } else {
+      bus.post({
+        threadId: goal.id, from: "ceo", kind: "status",
+        body: `Org plan: ${roles.map((r, i) => `${i + 1}) ${r.spec.name} — ${r.title}`).join("  ")}. Hiring now.`,
+      });
+    }
 
     const taskIds: string[] = [];
     for (const role of roles) {
@@ -419,6 +462,9 @@ class Orchestrator extends EventEmitter {
     this.realRunning.clear();
     this.recalled.clear();
     this.runNumber.clear();
+    this.pendingPlans.clear();
+    this.planResolvers.forEach((r) => r(false));
+    this.planResolvers.clear();
     escalations.clear();
     if (wipeMemory) runMemory.clear();
     bus.clear();

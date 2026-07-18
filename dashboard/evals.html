@@ -53,9 +53,11 @@
 
       document.getElementById("summary").innerHTML = run.models.map(m => `
         <div class="stat">
-          <div class="n">${m.cleared}/${m.total}</div>
-          <div class="l">${esc(m.model)} · cleared</div>
-          <div class="l">break: ${m.breakingPoint ? esc(m.breakingPoint) : "none — full clear"}</div>
+          <div class="n">${Math.round((m.csr ?? m.isr ?? 0) * 100)}% <span style="font-size:0.7rem;color:#8a93a6">CSR</span></div>
+          <div class="l">${esc(m.model)}</div>
+          <div class="l">ISR ${Math.round((m.isr ?? 0) * 100)}% · pass^${m.k ?? 1} ${Math.round((m.passK ?? 0) * 100)}%</div>
+          <div class="l">cleared ${m.cleared}/${m.total} · break: ${m.breakingPoint ? esc(m.breakingPoint) : "none"}</div>
+          ${m.tierCsr ? `<div class="l">curve: ${Object.entries(m.tierCsr).map(([t,v]) => `${t.slice(0,4)} ${Math.round(v*100)}%`).join(" → ")}</div>` : ""}
           ${m.avgLatencyMs != null ? `<div class="l">avg ${m.avgLatencyMs}ms</div>` : ""}
         </div>`).join("");
 
@@ -70,14 +72,20 @@
         }
         const cells = run.models.map(m => {
           const r = m.levels[i];
-          const detail = r.trials.map(t => `<details><summary>trial ${t.trial}: ${t.pass ? "pass" : "fail"}</summary>` +
-            `<pre>${esc(t.notes.join("\n"))}\n---\n${esc(t.response)}</pre></details>`).join("");
-          return `<td class="${cls(r.passRate)}">${pct(r.passRate)}${detail}</td>`;
+          const csr = r.csr ?? r.passRate ?? 0, isr = r.isr ?? r.passRate ?? 0;
+          const icon = isr === 1 ? "✅" : isr === 0 ? "❌" : "◐";
+          const detail = r.trials.map(t => {
+            const cons = (t.constraints || []).map(c => `${c.pass ? "✓" : "✗"} ${c.axis ? "["+c.axis+"] " : ""}${esc(c.label)}`).join("\n");
+            return `<details><summary>trial ${t.trial}: ${Math.round((t.csr ?? (t.pass?1:0))*100)}% CSR${t.pass ? " (full pass)" : ""}</summary>` +
+              `<pre>${cons}\n---\n${esc(t.response)}</pre></details>`;
+          }).join("");
+          return `<td class="${cls(isr)}">${icon} ${Math.round(csr*100)}%${detail}</td>`;
         }).join("");
         rows += `<tr><td>${i + 1}</td><td>${esc(base.title)}</td>${cells}</tr>`;
       }
       document.getElementById("matrix").innerHTML =
-        `<table><tr><th>#</th><th>Level</th>${run.models.map(m => `<th>${esc(m.model)}</th>`).join("")}</tr>${rows}</table>`;
+        `<table><tr><th>#</th><th>Level</th>${run.models.map(m => `<th>${esc(m.model)}</th>`).join("")}</tr>${rows}</table>` +
+        `<p style="font-size:0.7rem;color:#8a93a6;max-width:60rem">CSR = fraction of a level's constraints met (partial credit, AgentIF). ISR = all met (strict gate). pass^k = reliability: chance a random k of the trials all fully pass (τ²-bench). Adversarial levels split into [utility] and [security] axes (AgentDojo).</p>`;
     }
 
     document.getElementById("runSel").addEventListener("change", (e) => { selected = Number(e.target.value); render(); });

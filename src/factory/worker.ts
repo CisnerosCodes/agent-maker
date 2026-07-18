@@ -17,6 +17,7 @@ import type { ModelBackend } from "../evals/types.js";
 import { AnthropicApiBackend, ClaudeCliBackend, OpenAICompatBackend } from "../evals/backends.js";
 import { scan } from "../security/gate.js";
 import { escalations } from "../security/escalations.js";
+import { governance } from "../governance/governance.js";
 import { registry } from "../registry/registry.js";
 import { bus } from "../bus/bus.js";
 
@@ -80,8 +81,16 @@ export async function gateOrEscalate(agent: AgentRecord, content: string, kind: 
   const result: ScanResult = await scan(content, kind, agent.id);
   if (result.verdict === "clean") return true;
   if (result.verdict === "blocked") {
+    // The cage: critical verdicts hard-stop in every autonomy mode.
     bus.post({ threadId, from: agent.id, kind: "system", body: `BLOCKED by SecurityGate (${result.categories.join(", ")}): ${reason}` });
     return false;
+  }
+  // Flagged (non-critical): in autonomous mode, log + auto-proceed (no human gate).
+  // In assisted/supervised, pause for operator approve/deny.
+  if (governance.autoApprovesFlagged(result.verdict)) {
+    registry.upsert(agent, `Auto-approved (autonomous mode): ${reason} [${result.categories.join(", ")}]`);
+    bus.post({ threadId, from: agent.id, kind: "status", body: `Detection auto-approved in autonomous mode — logged, not stopped [${result.categories.join(", ")}]. (Critical exfil would still hard-block.)` });
+    return true;
   }
   const prev = agent.status;
   agent.status = "blocked";

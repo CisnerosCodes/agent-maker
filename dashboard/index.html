@@ -53,6 +53,17 @@
     .learning h3 { margin: 0 0 0.4rem; font-size: 0.72rem; color: #61c3ff; letter-spacing: 0.06em; }
     .learning .row { color: #9aa5bd; padding: 0.15rem 0; }
     .learning .faster { color: #5ff59a; }
+    .dial { display: flex; gap: 0.3rem; align-items: center; margin-right: 0.5rem; }
+    .dial .lbl { font-size: 0.6rem; color: #8a93a6; text-transform: uppercase; letter-spacing: 0.08em; margin-right: 0.2rem; }
+    .dial button { padding: 0.25rem 0.6rem; font-size: 0.7rem; border-color: #2a3040; color: #8a93a6; background: #10151f; }
+    .dial button.active { border-color: #61c3ff; color: #cfeaff; background: #14293a; }
+    .dial button.active[data-mode="autonomous"] { border-color: #f5a623; color: #ffd479; background: #2e2410; }
+    .dial button.active[data-mode="assisted"] { border-color: #5ff59a; color: #b8e986; background: #0f2e1c; }
+    .plan { border: 1px solid #3a5a2a; background: #14220e; border-radius: 8px; padding: 0.7rem 0.9rem; margin-bottom: 1rem; }
+    .plan h3 { margin: 0 0 0.3rem; font-size: 0.78rem; color: #b8e986; letter-spacing: 0.06em; }
+    .plan .roles { font-size: 0.7rem; color: #9aa5bd; margin: 0.3rem 0; }
+    .plan .actions { display: flex; gap: 0.5rem; margin-top: 0.4rem; }
+    .plan button.approve { border-color: #2f7a4b; }
     .log { font-size: 0.62rem; color: #6b7590; max-height: 4.4rem; overflow-y: auto; margin-top: 0.4rem; }
 
     .chat { border: 1px solid #2a3040; border-radius: 8px; background: #0e131c; display: flex; flex-direction: column; height: calc(100vh - 190px); min-height: 420px; position: sticky; top: 1rem; }
@@ -86,11 +97,18 @@
     <h1>AGENT CORP — LIVE</h1>
     <a href="/evals">→ model evals</a>
     <div class="spacer"></div>
+    <div class="dial" id="dial">
+      <span class="lbl">autonomy</span>
+      <button data-mode="assisted">assisted</button>
+      <button data-mode="supervised">supervised</button>
+      <button data-mode="autonomous">autonomous</button>
+    </div>
     <button id="attackBtn" class="deny">inject poisoned doc</button>
     <button id="resetBtn" class="deny">reset demo</button>
   </div>
 
   <div id="escalations"></div>
+  <div id="plans"></div>
   <div id="learning" class="learning"></div>
 
   <div class="goalbar">
@@ -118,7 +136,7 @@
   <div class="drawer" id="drawer"></div>
 
   <script>
-    const state = { agents: new Map(), tasks: new Map(), goals: new Map(), messages: [], escalations: new Map(), runs: [] };
+    const state = { agents: new Map(), tasks: new Map(), goals: new Map(), messages: [], escalations: new Map(), runs: [], autonomyMode: "supervised", pendingPlans: [] };
     let openAgentId = null;
 
     const $ = (id) => document.getElementById(id);
@@ -148,6 +166,28 @@
         const deliverable = g.deliverable ? ` · <a href="${esc(g.deliverable)}" target="_blank">${esc(g.deliverable)}</a>` : "";
         return `<div><b>${esc(g.id)}</b> [${esc(g.status)}] ${esc(g.text)} · tasks ${doneN}/${tasks.length} · est ${est}s${deliverable}</div>`;
       }).join("");
+    }
+
+    function renderDial() {
+      document.querySelectorAll("#dial button").forEach(b => {
+        b.classList.toggle("active", b.dataset.mode === state.autonomyMode);
+      });
+    }
+
+    function renderPlans() {
+      const plans = (state.pendingPlans || []).filter(p => !p.resolved);
+      $("plans").innerHTML = plans.map(p => `
+        <div class="plan">
+          <h3>📋 ORG PLAN AWAITING APPROVAL (assisted mode) — ${esc(p.goalText)}</h3>
+          <div class="roles">${p.roles.map(r => `${esc(r.name)} — ${esc(r.title)}`).join("<br>")}</div>
+          <div class="actions">
+            <button class="approve" onclick="resolvePlan('${esc(p.goalId)}','approve-plan')">Approve &amp; hire</button>
+            <button class="deny" onclick="resolvePlan('${esc(p.goalId)}','deny-plan')">Deny</button>
+          </div>
+        </div>`).join("");
+    }
+    async function resolvePlan(goalId, verb) {
+      await fetch(`/${verb}/${goalId}`, { method: "POST" });
     }
 
     function renderEscalations() {
@@ -279,7 +319,7 @@
       input.value = "";
     }
 
-    function renderAll() { renderEscalations(); renderLearning(); renderGoals(); renderGrid(); renderChat(); renderSelectors(); if (openAgentId) renderDrawer(); }
+    function renderAll() { renderDial(); renderPlans(); renderEscalations(); renderLearning(); renderGoals(); renderGrid(); renderChat(); renderSelectors(); if (openAgentId) renderDrawer(); }
 
     // --- actions ---
     $("goalBtn").onclick = async () => {
@@ -305,6 +345,12 @@
 
     $("resetBtn").onclick = async () => { await fetch("/reset", { method: "POST" }); };
     $("attackBtn").onclick = async () => { await fetch("/attack", { method: "POST", headers: {"Content-Type":"application/json"}, body: "{}" }); };
+    document.querySelectorAll("#dial button").forEach(b => {
+      b.onclick = async () => {
+        state.autonomyMode = b.dataset.mode; renderDial(); // optimistic
+        await fetch("/autonomy", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ mode: b.dataset.mode }) });
+      };
+    });
     $("threadFilter").addEventListener("change", renderChat);
 
     // --- SSE ---
@@ -315,6 +361,8 @@
       state.messages = s.messages;
       state.escalations = new Map((s.escalations || []).map(e => [e.id, e]));
       state.runs = s.runs || [];
+      state.autonomyMode = s.autonomyMode || "supervised";
+      state.pendingPlans = s.pendingPlans || [];
     }
     const es = new EventSource("/events");
     es.onmessage = (ev) => {
@@ -326,6 +374,11 @@
       else if (type === "message") state.messages.push(data);
       else if (type === "escalation") state.escalations.set(data.id, data);
       else if (type === "run") state.runs.push(data);
+      else if (type === "autonomy") state.autonomyMode = data.mode;
+      else if (type === "planApproval") {
+        state.pendingPlans = state.pendingPlans.filter(p => p.goalId !== data.goalId);
+        if (!data.resolved) state.pendingPlans.push(data);
+      }
       renderAll();
     };
   </script>
