@@ -55,13 +55,50 @@ head "~/.local/bin on PATH"
 mkdir -p "$HOME/.local/bin"
 say "ensured $HOME/.local/bin exists"
 path_line='export PATH="$HOME/.local/bin:$PATH"'
-if grep -qF "$path_line" "$HOME/.bashrc" 2>/dev/null; then
-  say "~/.bashrc already exports ~/.local/bin — skip"
-else
-  printf '\n# added by scripts/setup-linux.sh\n%s\n' "$path_line" >> "$HOME/.bashrc"
-  say "appended ~/.local/bin export to ~/.bashrc"
-fi
+# Write to ~/.bashrc (interactive) AND ~/.profile (login/non-interactive shells, e.g.
+# CI and `bash -lc`) so `openshell` on ~/.local/bin resolves without an interactive shell.
+for rc in "$HOME/.bashrc" "$HOME/.profile"; do
+  if grep -qF "$path_line" "$rc" 2>/dev/null; then
+    say "$(basename "$rc") already exports ~/.local/bin — skip"
+  else
+    printf '\n# added by scripts/setup-linux.sh\n%s\n' "$path_line" >> "$rc"
+    say "appended ~/.local/bin export to $(basename "$rc")"
+  fi
+done
 export PATH="$HOME/.local/bin:$PATH"
+
+# ---------------------------------------------------------------------------
+# WSL2-only: with Windows interop PATH on, a plain WSL shell resolves node/npm/docker
+# to the Windows binaries under /mnt/c; running Windows npm against a \\wsl.localhost
+# repo path fails ("UNC paths are not supported"). RUNTIME_SETUP.md §3 documents the
+# fix — verify/enforce it here so the box is usable without hand-sourcing nvm.
+if [ -f /proc/sys/fs/binfmt_misc/WSLInterop ] || grep -qi microsoft /proc/version 2>/dev/null; then
+  head "WSL2 interop (Windows dev/test host)"
+  wsl_conf=/etc/wsl.conf
+  if grep -Eq '^[[:space:]]*appendWindowsPath[[:space:]]*=[[:space:]]*false' "$wsl_conf" 2>/dev/null; then
+    say "appendWindowsPath=false in $wsl_conf — Windows PATH bleed disabled"
+  else
+    for t in node npm docker; do
+      case "$(command -v "$t" 2>/dev/null)" in
+        /mnt/*) say "note: '$t' resolves to a Windows binary ($(command -v "$t")) — PATH bleed active" ;;
+      esac
+    done
+    if [ "${SETUP_WRITE_WSL_CONF:-0}" = 1 ] && command -v sudo >/dev/null 2>&1; then
+      if printf '\n[interop]\nappendWindowsPath=false\n' | sudo tee -a "$wsl_conf" >/dev/null 2>&1; then
+        warn "wrote [interop] appendWindowsPath=false to $wsl_conf — run 'wsl.exe --shutdown' (Windows PowerShell), reopen Ubuntu, then re-run this script"
+      else
+        warn "could not write $wsl_conf via sudo — add it manually (see below)"
+      fi
+    else
+      warn "Windows PATH bleed not disabled — plain shells will use Windows node/npm/docker"
+      say "  fix: append to $wsl_conf (needs sudo):"
+      say "         [interop]"
+      say "         appendWindowsPath=false"
+      say "       then 'wsl.exe --shutdown' in Windows PowerShell, reopen Ubuntu."
+      say "  auto: SETUP_WRITE_WSL_CONF=1 bash scripts/setup-linux.sh"
+    fi
+  fi
+fi
 
 # ---------------------------------------------------------------------------
 head "NemoClaw + OpenShell (via NVIDIA's official installer)"

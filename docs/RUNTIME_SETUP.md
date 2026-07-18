@@ -87,13 +87,18 @@ appendWindowsPath=false
 Then from PowerShell: `wsl.exe --shutdown`, reopen Ubuntu. Ensure Docker Desktop is
 running with WSL2 integration enabled for the Ubuntu distro.
 
+`scripts/setup-linux.sh` detects WSL and **verifies** `appendWindowsPath=false` — it
+warns (box NOT READY) if the bleed is still active, and can write the block for you:
+`SETUP_WRITE_WSL_CONF=1 bash scripts/setup-linux.sh` (uses sudo), after which you still
+run `wsl.exe --shutdown` and reopen Ubuntu.
+
 **Run on the Linux filesystem, NOT `/mnt/c`** (9p there gives Windows perms + breaks
 `process.run_as_user` and landlock path semantics):
 
 ```bash
 mkdir -p ~/hackathon && cd ~/hackathon
 git clone https://github.com/CisnerosCodes/agent-maker.git
-cd agent-maker && git checkout Sky-Security-Work
+cd agent-maker   # on the default branch; `git checkout <branch>` only if working a lane
 bash scripts/setup-linux.sh
 ```
 

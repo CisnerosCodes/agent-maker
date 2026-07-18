@@ -165,4 +165,10 @@ createServer(async (req, res) => {
   } catch (err: any) {
     json(res, { error: err.message }, 500);
   }
+}).on("error", (err: any) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(`Port ${PORT} already in use. Free it or set DASHBOARD_PORT, e.g. DASHBOARD_PORT=4001 npm run dev`);
+    process.exit(1);
+  }
+  throw err;
 }).listen(PORT, () => console.log(`Dashboard: http://localhost:${PORT}`));
