@@ -3,32 +3,34 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Agent-Maker — Mission Control</title>
+  <title>ClawColony — Mission Control</title>
   <link rel="icon" type="image/svg+xml" href="/logo.svg" />
   <link rel="stylesheet" href="/theme.css" />
   <style>
+    /* Obsidian theme (mockup 3a): same layout as ever, dark palette. */
     :root {
-      --paper: #faf9f6;
-      --card: #ffffff;
-      --ink: #1c1626;
-      --ink-dim: #5f5a6b;
-      --ink-mute: #94909e;
-      --line: #e9e6e0;
-      --line-dark: #d8d4cc;
-      --accent: #6d28d9;
-      --accent-ink: #4c1d95;
-      --accent-soft: #f3eefc;
-      --green: #157f4d;
-      --green-soft: #e4f3ea;
-      --amber: #96660a;
-      --amber-soft: #f9f0da;
-      --red: #b3234a;
-      --red-soft: #fbe9ee;
-      --sky: #0e6f9e;
-      --sky-soft: #e7f2f8;
-      --honey: #b57a12;
+      --paper: #0b0812;
+      --card: #120e1c;
+      --card-2: #161022;
+      --ink: #ece8f4;
+      --ink-dim: #a49bbd;
+      --ink-mute: #6e6488;
+      --line: #241d36;
+      --line-dark: #322a4a;
+      --accent: #8b5cf6;
+      --accent-ink: #c4b5fd;
+      --accent-soft: rgba(139, 92, 246, 0.16);
+      --green: #4cc38a;
+      --green-soft: rgba(76, 195, 138, 0.12);
+      --amber: #d9a441;
+      --amber-soft: rgba(217, 164, 65, 0.12);
+      --red: #e5688a;
+      --red-soft: rgba(229, 104, 138, 0.1);
+      --sky: #5aa7d6;
+      --sky-soft: rgba(90, 167, 214, 0.12);
+      --honey: #d9a441;
       --radius: 10px;
-      --shadow: 0 1px 2px rgba(28, 22, 38, 0.05), 0 8px 28px rgba(28, 22, 38, 0.07);
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 28px rgba(0, 0, 0, 0.35);
     }
     body { background: var(--paper); color: var(--ink); font-size: 14px; }
     a { color: var(--accent-ink); text-decoration: none; }
@@ -40,28 +42,28 @@
       padding: 0.42rem 0.85rem; cursor: pointer;
       transition: background .12s, border-color .12s;
     }
-    button:hover { background: #f4f2ee; border-color: #c6c1b8; }
+    button:hover { background: var(--card-2); border-color: #4a4066; }
     button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-    button.primary:hover { background: #5b21b6; }
+    button.primary:hover { background: #7c4ded; }
     button.approve { color: var(--green); }
     button.approve:hover { background: var(--green-soft); border-color: var(--green); }
     button.deny { color: var(--red); }
     button.deny:hover { background: var(--red-soft); border-color: var(--red); }
     button.quiet { border-color: transparent; background: transparent; color: var(--ink-dim); padding: 0.42rem 0.6rem; text-align: left; }
-    button.quiet:hover { background: #f1efe9; border-color: transparent; }
+    button.quiet:hover { background: var(--card-2); border-color: transparent; }
 
     input, select, textarea {
       font-family: var(--font-sans); font-size: 0.84rem;
       background: var(--card); color: var(--ink);
       border: 1px solid var(--line-dark); border-radius: 8px; padding: 0.5rem 0.7rem;
     }
-    input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(109, 40, 217, 0.1); }
+    input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.22); }
     input::placeholder, textarea::placeholder { color: var(--ink-mute); }
 
     /* ---------- shell ---------- */
     .shell { display: grid; grid-template-columns: 216px 1fr; min-height: 100vh; }
     .side {
-      background: var(--card); border-right: 1px solid var(--line);
+      background: #0e0a18; border-right: 1px solid var(--line);
       padding: 1.1rem 0.9rem; display: flex; flex-direction: column; gap: 0.2rem;
       position: sticky; top: 0; height: 100vh;
     }
@@ -73,7 +75,7 @@
       font-size: 0.84rem; color: var(--ink-dim); padding: 0.42rem 0.6rem; border-radius: 7px;
       border: none; background: none; cursor: pointer; font-weight: 500; text-align: left; width: 100%;
     }
-    .side nav a:hover, .side nav button:hover { background: #f4f2ee; color: var(--ink); }
+    .side nav a:hover, .side nav button:hover { background: var(--card-2); color: var(--ink); }
     .side nav .active { color: var(--ink); background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
     .side .count { font-family: var(--font-mono); font-size: 0.68rem; color: var(--ink-mute); }
     .side-group { margin-top: 1.3rem; }
@@ -81,7 +83,7 @@
     .dial { display: flex; flex-direction: column; gap: 0.15rem; }
     .dial button { border: none; background: none; text-align: left; color: var(--ink-dim); padding: 0.35rem 0.6rem; border-radius: 7px; font-size: 0.82rem; display: flex; align-items: center; gap: 0.5rem; }
     .dial button::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--line-dark); }
-    .dial button.active { color: var(--ink); background: #f4f2ee; }
+    .dial button.active { color: var(--ink); background: var(--card-2); }
     .dial button.active::before { background: var(--accent); }
     .side .spacer { flex: 1; }
     .side .demo button { width: 100%; margin-bottom: 0.3rem; }
@@ -115,17 +117,17 @@
     .scard .slabel { font-size: 0.72rem; color: var(--ink-mute); font-weight: 600; margin-bottom: 0.5rem; }
     .scard .big { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.01em; }
     .scard .big small { font-size: 0.78rem; color: var(--ink-mute); font-weight: 500; margin-left: 0.3rem; }
-    .pbar { height: 8px; border-radius: 5px; background: #efede7; overflow: hidden; margin: 0.6rem 0 0.55rem; display: flex; }
+    .pbar { height: 8px; border-radius: 5px; background: #1c1630; overflow: hidden; margin: 0.6rem 0 0.55rem; display: flex; }
     .pbar i { display: block; height: 100%; }
-    .pbar .p-done { background: #2fa06a; }
+    .pbar .p-done { background: var(--green); }
     .pbar .p-working { background: var(--accent); }
-    .pbar .p-blocked { background: #d6688a; }
+    .pbar .p-blocked { background: var(--red); }
     .legend { display: flex; gap: 1.1rem; flex-wrap: wrap; font-size: 0.72rem; color: var(--ink-dim); }
     .legend span::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 2px; margin-right: 0.35rem; background: var(--line-dark); }
-    .legend .l-done::before { background: #2fa06a; }
+    .legend .l-done::before { background: var(--green); }
     .legend .l-working::before { background: var(--accent); }
     .legend .l-queued::before { background: var(--line-dark); }
-    .legend .l-blocked::before { background: #d6688a; }
+    .legend .l-blocked::before { background: var(--red); }
     .kv { display: flex; gap: 1.6rem; flex-wrap: wrap; }
     .kv .k { font-size: 0.72rem; color: var(--ink-mute); }
     .kv .v { font-size: 1.15rem; font-weight: 600; margin-top: 0.1rem; }
@@ -145,11 +147,11 @@
     td { padding: 0.72rem 1rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
     tr:last-child td { border-bottom: none; }
     tbody tr { cursor: pointer; }
-    tbody tr:hover td { background: #faf8f4; }
+    tbody tr:hover td { background: var(--card-2); }
     .st { white-space: nowrap; font-weight: 500; color: var(--ink-dim); }
     .st i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 0.45rem; background: var(--line-dark); }
     .st.working { color: var(--green); } .st.working i { background: var(--green); }
-    .st.done { color: var(--ink-dim); } .st.done i { background: #2fa06a; }
+    .st.done { color: var(--ink-dim); } .st.done i { background: var(--green); }
     .st.blocked { color: var(--red); font-weight: 600; } .st.blocked i { background: var(--red); }
     .st.waiting { color: var(--amber); } .st.waiting i { background: var(--amber); }
     .st.provisioning, .st.starting { color: var(--sky); } .st.provisioning i, .st.starting i { background: var(--sky); }
@@ -158,7 +160,7 @@
     .aname .ceo-tag { font-family: var(--font-mono); font-size: 0.62rem; color: var(--honey); margin-left: 0.4rem; letter-spacing: 0.06em; }
     .arole { font-size: 0.72rem; color: var(--ink-mute); margin-top: 0.1rem; }
     .ttitle { color: var(--ink-dim); max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .tbar { height: 4px; border-radius: 3px; background: #efede7; overflow: hidden; margin-top: 0.4rem; max-width: 220px; }
+    .tbar { height: 4px; border-radius: 3px; background: #1c1630; overflow: hidden; margin-top: 0.4rem; max-width: 220px; }
     .tbar i { display: block; height: 100%; background: var(--accent); transition: width .6s ease; }
     .mode-real { font-family: var(--font-mono); font-size: 0.68rem; color: var(--green); font-weight: 600; letter-spacing: 0.04em; }
     .mode-sim { font-family: var(--font-mono); font-size: 0.68rem; color: var(--ink-mute); letter-spacing: 0.04em; }
@@ -168,7 +170,7 @@
     .empty { padding: 2.2rem 1rem; text-align: center; color: var(--ink-mute); font-size: 0.85rem; }
 
     /* ---------- slide-overs ---------- */
-    .over-back { position: fixed; inset: 0; background: rgba(28, 22, 38, 0.28); display: none; z-index: 30; }
+    .over-back { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); display: none; z-index: 30; }
     .over-back.open { display: block; }
     .panel {
       position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 94vw); z-index: 31;
@@ -220,7 +222,7 @@
     #drawer .stat-line { font-size: 0.74rem; color: var(--ink-dim); margin-top: 0.4rem; font-family: var(--font-mono); }
 
     /* wizard */
-    .wizard-back { position: fixed; inset: 0; background: rgba(28, 22, 38, 0.32); display: none; z-index: 40; }
+    .wizard-back { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); display: none; z-index: 40; }
     .wizard { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); width: min(640px, 94vw); max-height: 88vh; overflow-y: auto; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 1.6rem 1.8rem; display: none; z-index: 41; box-shadow: var(--shadow); }
     .wizard.open, .wizard-back.open { display: block; }
     .wizard h2 { font-family: var(--font-serif); font-weight: 400; margin: 0 0 0.2rem; font-size: 1.45rem; }
@@ -231,15 +233,15 @@
     .wizard textarea { min-height: 4.2rem; resize: vertical; }
     .wizard .opts { display: flex; flex-wrap: wrap; gap: 0.4rem; }
     .wizard .opt { border: 1px solid var(--line-dark); border-radius: 8px; padding: 0.32rem 0.75rem; font-size: 0.78rem; color: var(--ink-dim); cursor: pointer; user-select: none; }
-    .wizard .opt:hover { border-color: #b9b3a8; }
+    .wizard .opt:hover { border-color: #4a4066; }
     .wizard .opt.sel { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-soft); }
     .wizard .actions { display: flex; gap: 0.6rem; margin-top: 1.2rem; }
 
     /* toasts — every button press gets visible feedback, success or failure */
     #toasts { position: fixed; bottom: 1.1rem; right: 1.1rem; z-index: 60; display: flex; flex-direction: column; gap: .5rem; max-width: min(380px, 90vw); }
-    .toast { background: var(--ink); color: #fff; border-radius: 9px; padding: .6rem .9rem; font-size: .8rem; line-height: 1.45; box-shadow: var(--shadow); animation: toast-in .18s ease; }
-    .toast.err { background: var(--red); }
-    .toast.ok { background: var(--green); }
+    .toast { background: #2a2140; color: var(--ink); border: 1px solid var(--line-dark); border-radius: 9px; padding: .6rem .9rem; font-size: .8rem; line-height: 1.45; box-shadow: var(--shadow); animation: toast-in .18s ease; }
+    .toast.err { background: #47182b; border-color: var(--red); }
+    .toast.ok { background: #123726; border-color: var(--green); }
     .toast .toast-fix { margin-top: .35rem; opacity: .92; }
     .toast a { display: block; margin-top: .35rem; color: #fff; font-weight: 600; text-decoration: underline; }
     @keyframes toast-in { from { transform: translateY(8px); opacity: 0; } }
@@ -266,7 +268,7 @@
 <body>
   <div class="shell">
     <aside class="side">
-      <div class="wordmark"><img src="/logo.svg" width="24" height="24" alt="" />Agent-Maker</div>
+      <div class="wordmark"><img src="/logo.svg" width="24" height="24" alt="" />ClawColony</div>
       <nav>
         <a class="active" href="/app">Overview</a>
         <a href="/setup">Setup check</a>

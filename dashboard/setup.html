@@ -3,16 +3,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Agent-Maker — Setup checklist</title>
+  <title>ClawColony — Setup checklist</title>
   <link rel="icon" type="image/svg+xml" href="/logo.svg" />
   <link rel="stylesheet" href="/theme.css" />
   <style>
+    /* Obsidian theme — matches Mission Control (mockup 3a). */
     :root {
-      --paper: #faf9f6; --card: #ffffff; --ink: #1c1626; --ink-dim: #5f5a6b; --ink-mute: #94909e;
-      --line: #e9e6e0; --line-dark: #d8d4cc; --accent: #6d28d9; --accent-ink: #4c1d95; --accent-soft: #f3eefc;
-      --green: #157f4d; --green-soft: #e4f3ea; --amber: #96660a; --amber-soft: #f9f0da;
-      --red: #b3234a; --red-soft: #fbe9ee; --radius: 10px;
-      --shadow: 0 1px 2px rgba(28,22,38,.05), 0 8px 28px rgba(28,22,38,.07);
+      --paper: #0b0812; --card: #120e1c; --ink: #ece8f4; --ink-dim: #a49bbd; --ink-mute: #6e6488;
+      --line: #241d36; --line-dark: #322a4a; --accent: #8b5cf6; --accent-ink: #c4b5fd; --accent-soft: rgba(139,92,246,.16);
+      --green: #4cc38a; --green-soft: rgba(76,195,138,.1); --amber: #d9a441; --amber-soft: rgba(217,164,65,.1);
+      --red: #e5688a; --red-soft: rgba(229,104,138,.1); --radius: 10px;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 28px rgba(0,0,0,.35);
     }
     body { background: var(--paper); color: var(--ink); font-size: 15px; }
     a { color: var(--accent-ink); }
@@ -27,14 +28,14 @@
       background: var(--card); color: var(--ink); border: 1px solid var(--line-dark);
       border-radius: 8px; padding: .5rem 1rem; cursor: pointer;
     }
-    button:hover { background: #f4f2ee; }
+    button:hover { background: #161022; }
     button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-    button.primary:hover { background: #5b21b6; }
+    button.primary:hover { background: #7c4ded; }
     button:disabled { opacity: .55; cursor: default; }
     .verdict { font-size: .95rem; font-weight: 600; padding: .9rem 1.1rem; border-radius: var(--radius); border: 1px solid var(--line); background: var(--card); margin-bottom: 1.2rem; display: none; }
-    .verdict.ok { color: var(--green); background: var(--green-soft); border-color: #bfe3cf; }
-    .verdict.warn { color: var(--amber); background: var(--amber-soft); border-color: #ecd9ae; }
-    .verdict.bad { color: var(--red); background: var(--red-soft); border-color: #f2c3d0; }
+    .verdict.ok { color: var(--green); background: var(--green-soft); border-color: rgba(76,195,138,.4); }
+    .verdict.warn { color: var(--amber); background: var(--amber-soft); border-color: rgba(217,164,65,.4); }
+    .verdict.bad { color: var(--red); background: var(--red-soft); border-color: rgba(229,104,138,.4); }
     .group-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-mute); font-weight: 600; margin: 1.4rem 0 .5rem; }
     .check { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: .85rem 1.1rem; margin-bottom: .55rem; box-shadow: var(--shadow); display: flex; gap: .8rem; }
     .check .icon { font-size: 1rem; width: 1.4rem; text-align: center; flex: none; padding-top: .05rem; }
