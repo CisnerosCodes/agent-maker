@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent-Maker — Setup checklist</title>
+  <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+  <link rel="stylesheet" href="/theme.css" />
+  <style>
+    :root {
+      --paper: #faf9f6; --card: #ffffff; --ink: #1c1626; --ink-dim: #5f5a6b; --ink-mute: #94909e;
+      --line: #e9e6e0; --line-dark: #d8d4cc; --accent: #6d28d9; --accent-ink: #4c1d95; --accent-soft: #f3eefc;
+      --green: #157f4d; --green-soft: #e4f3ea; --amber: #96660a; --amber-soft: #f9f0da;
+      --red: #b3234a; --red-soft: #fbe9ee; --radius: 10px;
+      --shadow: 0 1px 2px rgba(28,22,38,.05), 0 8px 28px rgba(28,22,38,.07);
+    }
+    body { background: var(--paper); color: var(--ink); font-size: 15px; }
+    a { color: var(--accent-ink); }
+    .wrap { max-width: 780px; margin: 0 auto; padding: 2.2rem 1.2rem 4rem; }
+    header { display: flex; align-items: center; gap: .7rem; margin-bottom: .4rem; }
+    header img { border-radius: 7px; }
+    header h1 { font-family: var(--font-serif); font-weight: 400; font-size: 1.8rem; margin: 0; }
+    .sub { color: var(--ink-dim); line-height: 1.6; margin: .4rem 0 1.4rem; }
+    .toolbar { display: flex; gap: .6rem; align-items: center; margin-bottom: 1.2rem; flex-wrap: wrap; }
+    button {
+      font-family: var(--font-sans); font-size: .86rem; font-weight: 500;
+      background: var(--card); color: var(--ink); border: 1px solid var(--line-dark);
+      border-radius: 8px; padding: .5rem 1rem; cursor: pointer;
+    }
+    button:hover { background: #f4f2ee; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.primary:hover { background: #5b21b6; }
+    button:disabled { opacity: .55; cursor: default; }
+    .verdict { font-size: .95rem; font-weight: 600; padding: .9rem 1.1rem; border-radius: var(--radius); border: 1px solid var(--line); background: var(--card); margin-bottom: 1.2rem; display: none; }
+    .verdict.ok { color: var(--green); background: var(--green-soft); border-color: #bfe3cf; }
+    .verdict.warn { color: var(--amber); background: var(--amber-soft); border-color: #ecd9ae; }
+    .verdict.bad { color: var(--red); background: var(--red-soft); border-color: #f2c3d0; }
+    .group-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .1em; color: var(--ink-mute); font-weight: 600; margin: 1.4rem 0 .5rem; }
+    .check { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: .85rem 1.1rem; margin-bottom: .55rem; box-shadow: var(--shadow); display: flex; gap: .8rem; }
+    .check .icon { font-size: 1rem; width: 1.4rem; text-align: center; flex: none; padding-top: .05rem; }
+    .check h3 { margin: 0; font-size: .92rem; font-weight: 600; display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
+    .check .live-tag { font-family: var(--font-mono); font-size: .62rem; color: var(--green); letter-spacing: .05em; }
+    .check .detail { font-size: .84rem; color: var(--ink-dim); line-height: 1.55; margin-top: .25rem; }
+    .check .fix { font-size: .84rem; color: var(--ink); line-height: 1.55; margin-top: .35rem; padding: .5rem .7rem; background: var(--accent-soft); border-radius: 7px; }
+    .check .fix b { color: var(--accent-ink); }
+    .check.pending .icon { animation: spin 1s linear infinite; display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .footer-note { color: var(--ink-mute); font-size: .8rem; line-height: 1.7; margin-top: 1.6rem; }
+    .footer-note code { background: var(--card); border: 1px solid var(--line); border-radius: 5px; padding: .05rem .35rem; font-size: .74rem; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header><img src="/logo.svg" width="30" height="30" alt="" /><h1>Setup checklist</h1></header>
+    <p class="sub">
+      This page tests your setup for real — not just "is a key pasted", but "does the key actually work
+      right now" (a live call to each connected provider). Green means go. Anything amber or red tells
+      you the exact fix. Nothing here ever shows or sends a key value.
+    </p>
+    <div class="toolbar">
+      <button class="primary" id="runBtn">Run all checks</button>
+      <button id="runOffline">Run without calling providers</button>
+      <a href="/app" style="margin-left:auto">← Back to Mission Control</a>
+    </div>
+    <div class="verdict" id="verdict"></div>
+    <div id="results"></div>
+    <p class="footer-note">
+      Same checks from a terminal: <code>npm run doctor</code> (before the dashboard is even running).<br />
+      Keys are pasted in Mission Control → <b>Connections</b>; each save re-verifies that key automatically.<br />
+      Everything runs with zero keys — unconnected features are honestly labeled SIMULATION in the demo.
+    </p>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => (s ?? "").toString().replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+    const ICON = { pass: "✅", warn: "🟡", fail: "❌", skip: "▫️" };
+    const GROUPS = [["core", "System"], ["keys", "Connections — live key tests"], ["data", "Data"]];
+
+    // Names shown while the checks are in flight, so the user watches the
+    // checklist fill in instead of staring at a blank page.
+    const PLACEHOLDERS = [
+      ["core", "Node.js version"], ["core", ".env file"], ["core", "Internet access (research data source)"],
+      ["core", "Data folder is writable"], ["core", "Model eval results (the /evals page)"],
+      ["keys", "AI brain — Claude key"], ["keys", "AI brain — NVIDIA Nemotron key"],
+      ["keys", "HiddenLayer security scanning"], ["keys", "Apify live research"],
+      ["keys", "Shopify store"], ["keys", "Resend agent email"],
+    ];
+
+    function renderPending() {
+      $("verdict").style.display = "none";
+      $("results").innerHTML = GROUPS.map(([g, label]) => {
+        const rows = PLACEHOLDERS.filter(p => p[0] === g);
+        if (!rows.length) return "";
+        return `<div class="group-label">${label}</div>` + rows.map(p => `
+          <div class="check pending"><span class="icon">◐</span><div><h3>${esc(p[1])}</h3>
+          <div class="detail">Checking…</div></div></div>`).join("");
+      }).join("");
+    }
+
+    function render(report) {
+      const v = $("verdict");
+      v.style.display = "block";
+      v.className = "verdict " + (report.summary.fail ? "bad" : report.summary.warn ? "warn" : "ok");
+      v.textContent = report.summary.verdict;
+      $("results").innerHTML = GROUPS.map(([g, label]) => {
+        const rows = report.checks.filter(c => c.group === g);
+        if (!rows.length) return "";
+        return `<div class="group-label">${label}</div>` + rows.map(c => `
+          <div class="check">
+            <span class="icon">${ICON[c.status] ?? "▫️"}</span>
+            <div>
+              <h3>${esc(c.label)} ${c.live ? '<span class="live-tag">LIVE-TESTED</span>' : ""}</h3>
+              <div class="detail">${esc(c.detail)}</div>
+              ${c.fix && c.status !== "pass" ? `<div class="fix"><b>Fix:</b> ${esc(c.fix)}</div>` : ""}
+            </div>
+          </div>`).join("");
+      }).join("");
+    }
+
+    async function run(live) {
+      $("runBtn").disabled = true; $("runOffline").disabled = true;
+      renderPending();
+      try {
+        const res = await fetch("/api/doctor" + (live ? "" : "?live=0"));
+        render(await res.json());
+      } catch (err) {
+        $("verdict").style.display = "block";
+        $("verdict").className = "verdict bad";
+        $("verdict").textContent = "Could not run the checks: " + err.message + " — is the server still running?";
+        $("results").innerHTML = "";
+      } finally {
+        $("runBtn").disabled = false; $("runOffline").disabled = false;
+      }
+    }
+    $("runBtn").onclick = () => run(true);
+    $("runOffline").onclick = () => run(false);
+    run(true); // auto-run on load — the page IS the wizard
+  </script>
+</body>
+</html>

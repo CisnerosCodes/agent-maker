@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent-Maker — a self-expanding agent company in a box</title>
+  <meta name="description" content="Give the CEO agent a goal. It hires a sandboxed team of worker agents, with runtime security on every token. You approve or deny." />
+  <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+  <link rel="stylesheet" href="/theme.css" />
+  <style>
+    :root {
+      --bg0: #0b0812;
+      --bg1: #120e1c;
+      --bg2: #1a1428;
+      --line: #262038;
+      --line-bright: #3d3458;
+      --text: #ece8f4;
+      --text-dim: #a49bbd;
+      --text-mute: #6e6488;
+      --violet: #8b5cf6;
+      --violet-deep: #6d28d9;
+      --honey: #d9a441;
+      --green: #4cc38a;
+      --red: #e5688a;
+      --radius: 12px;
+    }
+    body { background: var(--bg0); color: var(--text); overflow-x: hidden; font-size: 15px; }
+    a { color: var(--text-dim); text-decoration: none; }
+    a:hover { color: var(--text); }
+
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem;
+      background: transparent; color: var(--text);
+      border: 1px solid var(--line-bright); border-radius: 9px;
+      padding: 0.55rem 1.1rem; cursor: pointer;
+      font-family: var(--font-sans); font-size: 0.85rem; font-weight: 500;
+      transition: border-color .15s, background .15s;
+    }
+    .btn:hover { border-color: var(--violet); color: var(--text); background: var(--bg2); }
+    .btn.primary { background: #ece8f4; border-color: #ece8f4; color: #14101f; font-weight: 600; }
+    .btn.primary:hover { background: #fff; border-color: #fff; }
+    .btn.xl { padding: 0.75rem 1.5rem; font-size: 0.92rem; }
+
+    /* ---------- nav ---------- */
+    .nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+      display: flex; align-items: center; gap: 1.6rem;
+      padding: 0.85rem clamp(1rem, 4vw, 3rem);
+      background: rgba(11, 8, 18, 0.72);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(38, 32, 56, 0.6);
+    }
+    .wordmark { font-family: var(--font-brand); font-weight: 700; font-size: 1rem; color: var(--text); display: flex; align-items: center; gap: 0.55rem; }
+    .wordmark img { border-radius: 6px; display: block; }
+    .nav .links { display: flex; gap: 1.5rem; margin-left: auto; align-items: center; }
+    .nav .links a { font-size: 0.84rem; font-weight: 500; }
+    @media (max-width: 720px) { .nav .links a:not(.btn) { display: none; } }
+
+    /* ---------- hero ---------- */
+    .hero { position: relative; min-height: 100svh; display: flex; align-items: center; }
+    #scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    @media (max-width: 720px) { #scene { opacity: 0.45; } }
+    .hero::after {
+      content: ""; position: absolute; inset: auto 0 0 0; height: 22vh; pointer-events: none;
+      background: linear-gradient(180deg, transparent, var(--bg0));
+    }
+    .hero-inner {
+      position: relative; z-index: 2; width: min(1180px, 92vw); margin: 0 auto;
+      padding-top: 5rem; pointer-events: none;
+    }
+    .hero-inner a, .hero-inner button { pointer-events: auto; }
+    .eyebrow {
+      font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--text-mute);
+    }
+    .eyebrow b { color: var(--honey); font-weight: 400; }
+    h1.display {
+      font-family: var(--font-serif); font-weight: 400;
+      font-size: clamp(2.7rem, 7vw, 5.2rem); line-height: 1.02;
+      letter-spacing: -0.01em; margin: 1rem 0 1.2rem; max-width: 14ch;
+    }
+    h1.display em { font-style: italic; color: var(--honey); }
+    .hero .sub {
+      max-width: 54ch; color: var(--text-dim); font-size: clamp(0.95rem, 1.4vw, 1.06rem);
+      line-height: 1.7; margin-bottom: 2rem;
+    }
+    .hero .sub b { color: var(--text); font-weight: 600; }
+    .cta-row { display: flex; gap: 0.8rem; flex-wrap: wrap; align-items: center; }
+    .stat-strip {
+      display: flex; flex-wrap: wrap; margin-top: 3.2rem;
+      font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-mute); letter-spacing: 0.04em;
+    }
+    .stat-strip span { padding: 0.1rem 1.2rem 0.1rem 0; margin-right: 1.2rem; border-right: 1px solid var(--line); }
+    .stat-strip span:last-child { border-right: none; }
+
+    .mascot {
+      position: absolute; right: clamp(0rem, 6vw, 6rem); bottom: 8vh; z-index: 1;
+      width: clamp(220px, 26vw, 420px); pointer-events: none; display: none;
+      filter: drop-shadow(0 20px 60px rgba(20, 10, 40, 0.6));
+    }
+
+    /* ---------- sections ---------- */
+    section { position: relative; width: min(1180px, 92vw); margin: 0 auto; padding: clamp(3.5rem, 8vh, 6.5rem) 0; }
+    .sec-eyebrow {
+      font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.16em;
+      text-transform: uppercase; color: var(--text-mute); margin-bottom: 0.8rem;
+    }
+    h2 {
+      font-family: var(--font-serif); font-weight: 400; letter-spacing: -0.005em;
+      font-size: clamp(1.8rem, 3.6vw, 2.7rem); margin: 0 0 0.8rem; line-height: 1.1;
+    }
+    h2 em { font-style: italic; }
+    h2 .red { color: var(--red); }
+    .lede { color: var(--text-dim); max-width: 62ch; line-height: 1.7; font-size: 0.95rem; margin-bottom: 2.4rem; }
+    .lede b { color: var(--text); }
+    .lede code, .steps p code {
+      font-family: var(--font-mono); font-size: 0.82em; background: var(--bg2);
+      border: 1px solid var(--line); border-radius: 5px; padding: 0.05rem 0.35rem; color: var(--text);
+    }
+
+    /* steps: rule-topped columns, no boxes */
+    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 2rem 2.5rem; }
+    .step { border-top: 1px solid var(--line-bright); padding-top: 1.1rem; }
+    .step .n { font-family: var(--font-serif); font-style: italic; font-size: 1.6rem; color: var(--honey); line-height: 1; }
+    .step h3 { font-family: var(--font-sans); font-weight: 600; font-size: 0.98rem; margin: 0.6rem 0 0.45rem; }
+    .step p { margin: 0; color: var(--text-dim); font-size: 0.85rem; line-height: 1.65; }
+
+    /* security spotlight */
+    .spotlight {
+      background: var(--bg1); border: 1px solid var(--line); border-radius: 16px;
+      padding: clamp(1.6rem, 3vw, 2.6rem);
+      display: grid; grid-template-columns: 1.1fr 1fr; gap: 2.5rem; align-items: center;
+    }
+    @media (max-width: 860px) { .spotlight { grid-template-columns: 1fr; } }
+    .spotlight h3 { font-family: var(--font-serif); font-weight: 400; font-size: 1.5rem; margin: 0 0 0.6rem; }
+    .spotlight .kicker { font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--red); margin-bottom: 0.7rem; }
+    .spotlight p { color: var(--text-dim); font-size: 0.88rem; line-height: 1.7; margin: 0 0 1.4rem; }
+    .spotlight p b { color: var(--text); }
+    .term {
+      background: #0a0711; border: 1px solid var(--line); border-radius: 12px;
+      font-family: var(--font-mono); font-size: 0.72rem; line-height: 1.8; padding: 1.1rem 1.2rem;
+      overflow-x: auto;
+    }
+    .term .bar { display: flex; gap: 6px; margin-bottom: 0.8rem; }
+    .term .bar i { width: 9px; height: 9px; border-radius: 50%; background: var(--line-bright); }
+    .term .g { color: var(--green); } .term .r { color: var(--red); }
+    .term .v { color: var(--violet); } .term .h { color: var(--honey); }
+    .term .d { color: var(--text-mute); }
+
+    /* intelligence columns */
+    .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 2rem 2.5rem; margin-top: 2.2rem; }
+    .col { border-top: 1px solid var(--line-bright); padding-top: 1.1rem; }
+    .col .k { font-family: var(--font-mono); font-size: 0.64rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-mute); }
+    .col h3 { font-family: var(--font-sans); font-weight: 600; font-size: 0.98rem; margin: 0.6rem 0 0.45rem; }
+    .col p { margin: 0; color: var(--text-dim); font-size: 0.85rem; line-height: 1.65; }
+    .col a { color: var(--text); border-bottom: 1px solid var(--line-bright); }
+
+    .demo-video { display: none; margin-top: 2.5rem; }
+    .demo-video video { width: 100%; border-radius: 14px; border: 1px solid var(--line-bright); }
+
+    /* honesty strip */
+    .honest {
+      border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+      padding: 1.5rem 0; font-size: 0.88rem; color: var(--text-dim); text-align: center; line-height: 2;
+    }
+    .honest b { color: var(--text); }
+    .tag { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.05em; border: 1px solid var(--line-bright); border-radius: 5px; padding: 0.1rem 0.5rem; margin: 0 0.25rem; }
+    .tag.real { color: var(--green); }
+    .tag.sim { color: var(--honey); }
+
+    pre.cmd {
+      background: #0a0711; border: 1px solid var(--line); border-radius: 12px;
+      padding: 1rem 1.2rem; font-family: var(--font-mono); font-size: 0.8rem; color: var(--text);
+      overflow-x: auto; margin: 1.2rem 0 0;
+    }
+    pre.cmd .p { color: var(--text-mute); }
+
+    footer {
+      border-top: 1px solid var(--line); margin-top: 3rem;
+      padding: 2.2rem clamp(1rem, 4vw, 3rem) 2.6rem;
+      display: flex; gap: 1.5rem; align-items: center; flex-wrap: wrap;
+      font-size: 0.78rem; color: var(--text-mute);
+    }
+    footer .spacer { flex: 1; }
+
+    .reveal { opacity: 0; transform: translateY(14px); transition: opacity .55s ease, transform .55s ease; }
+    .reveal.in { opacity: 1; transform: none; }
+    @media (prefers-reduced-motion: reduce) {
+      .reveal { opacity: 1; transform: none; transition: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="nav">
+    <a href="/" class="wordmark" aria-label="Agent-Maker home">
+      <img src="/logo.svg" width="24" height="24" alt="" />Agent-Maker
+    </a>
+    <div class="links">
+      <a href="#how">How it works</a>
+      <a href="#security">Security</a>
+      <a href="/evals">Evals</a>
+      <a href="https://github.com/CisnerosCodes/agent-maker" target="_blank" rel="noopener">GitHub</a>
+      <a class="btn primary" href="/app">Open dashboard</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <canvas id="scene" aria-hidden="true"></canvas>
+    <img class="mascot" id="mascot" src="/media/bee-hero.png" alt="Agent-Maker worker bee mascot" />
+    <div class="hero-inner">
+      <div class="eyebrow">AITX × NVIDIA Claw Hackathon 2026 · <b>HiddenLayer Runtime Security track</b></div>
+      <h1 class="display">Hire a <em>company</em>, not a chatbot.</h1>
+      <p class="sub">
+        Agent-Maker is a <b>self-expanding agent company in a box</b>. Give the CEO a goal —
+        it interviews you, hires a scoped team of worker agents, drops each one into a sandbox
+        it can't escape, and puts <b>every single token behind runtime security</b>.
+        You govern; the hive works.
+      </p>
+      <div class="cta-row">
+        <a class="btn primary xl" href="/app">Launch your company</a>
+        <a class="btn xl" href="#security">Watch the attack get caught</a>
+      </div>
+      <div class="stat-strip">
+        <span>20-level eval ladder</span>
+        <span>every worker sandboxed · OpenShell</span>
+        <span>every token scanned · HiddenLayer</span>
+        <span>zero runtime deps</span>
+      </div>
+    </div>
+  </header>
+
+  <section id="how">
+    <div class="sec-eyebrow reveal">How it works</div>
+    <h2 class="reveal">One goal in. <em>A whole org out.</em></h2>
+    <p class="lede reveal">
+      Type <code>make me a shopify store</code>. The CEO asks one clarifying question,
+      drafts the org, and the Factory brings each hire to life — you watch it happen on a live org chart.
+    </p>
+    <div class="steps">
+      <div class="step reveal">
+        <div class="n">01</div>
+        <h3>You give the goal</h3>
+        <p>Plain language, in the dashboard or from your own AI over MCP. The CEO interviews you once and remembers your business.</p>
+      </div>
+      <div class="step reveal">
+        <div class="n">02</div>
+        <h3>The CEO drafts the org</h3>
+        <p>Goal becomes roles, hired from a real role library: research, store-builder, copywriter, strategist, analyst. Builders wait on research.</p>
+      </div>
+      <div class="step reveal">
+        <div class="n">03</div>
+        <h3>The Factory births workers</h3>
+        <p>Each worker gets a scoped identity, an OpenShell policy, and a NemoClaw sandbox — identity, then policy, then sandbox, visible in the event log.</p>
+      </div>
+      <div class="step reveal">
+        <div class="n">04</div>
+        <h3>You stay in command</h3>
+        <p>An autonomy dial — assisted, supervised, autonomous — plus approve or deny on plans and security escalations.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="security">
+    <div class="sec-eyebrow reveal">Runtime security</div>
+    <h2 class="reveal">Security is the product, <span class="red">not a checkbox</span>.</h2>
+    <p class="lede reveal">
+      Every model input, output, tool call, and ingested document passes through the
+      <b>SecurityGate</b> — HiddenLayer Runtime Security. Detections route by policy:
+      log, block, or escalate to a human. And when the gate says no, the sandbox agrees:
+      <b>defense in depth</b> means the OpenShell egress policy blocks the exfil host independently.
+    </p>
+    <div class="spotlight reveal">
+      <div>
+        <div class="kicker">Live demo · one click</div>
+        <h3>Inject a poisoned doc. Watch it die.</h3>
+        <p>Hit <b>"inject poisoned doc"</b> in the dashboard: a document carrying a prompt-injection and data-exfil payload heads for the research agent. The gate flags it, the worker goes <b>blocked</b>, and an approve-or-deny decision lands on your desk. Deny it — the org keeps working.</p>
+        <a class="btn" href="/app">Try the attack live</a>
+      </div>
+      <div class="term" aria-hidden="true">
+        <div class="bar"><i></i><i></i><i></i></div>
+        <div><span class="d">$</span> <span class="v">gate.scan</span>(doc-7f2e) <span class="d">— ingest → research-1</span></div>
+        <div><span class="r">DETECTED</span> prompt_injection, data_exfiltration</div>
+        <div><span class="d">├─</span> agent research-1 → <span class="r">blocked</span></div>
+        <div><span class="d">├─</span> escalation <span class="h">ESC-014</span> → operator</div>
+        <div><span class="d">└─</span> operator: <span class="r">DENY</span></div>
+        <div><span class="g">payload quarantined</span> <span class="d">· evil.example unreachable anyway —</span></div>
+        <div><span class="d">  openshell policy: egress denied by default</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="intelligence">
+    <div class="sec-eyebrow reveal">Recursive intelligence</div>
+    <h2 class="reveal">The company gets <em>faster</em> every run.</h2>
+    <div class="cols">
+      <div class="col reveal">
+        <div class="k">Run memory</div>
+        <h3>It remembers work it has done</h3>
+        <p>Every completed goal is written to memory. Launch the same niche twice: run two recalls run one, reuses its findings — zero re-scrapes, zero research calls — and the dashboard shows the run-over-run speedup.</p>
+      </div>
+      <div class="col reveal">
+        <div class="k">Eval ladder</div>
+        <h3>Workers are benchmarked before hired</h3>
+        <p>A 20-level instruction-following ladder finds the exact point a model breaks under pressure. If a backend and model clear the ladder, that exact pair runs the workers. <a href="/evals">See live results</a></p>
+      </div>
+      <div class="col reveal">
+        <div class="k">Role library</div>
+        <h3>New roles are entries, not code</h3>
+        <p>The CEO hires from a role library — store-launch, marketing-agency, market-research playbooks. Extending the company means adding a library entry, not touching the orchestrator.</p>
+      </div>
+    </div>
+    <div class="demo-video reveal" id="demoWrap">
+      <video id="demoVideo" controls preload="metadata" src="/media/demo.mp4"></video>
+    </div>
+  </section>
+
+  <section style="padding-top: 0">
+    <div class="honest reveal">
+      <b>Honest by design.</b> Every agent is labeled
+      <span class="tag real">REAL</span> or <span class="tag sim">SIM</span>
+      — live scrapes, real API calls, and mock sources are never confused. Judges included.
+    </div>
+  </section>
+
+  <section id="mcp">
+    <div class="sec-eyebrow reveal">Bring your own agent</div>
+    <h2 class="reveal">Your AI can run the <em>whole company</em>.</h2>
+    <p class="lede reveal">
+      Don't learn a dashboard — delegate it. Connect any MCP client and say
+      <i>"set up my agent company."</i> It onboards you, launches goals, watches the org live,
+      and explains every security escalation. Same company, chat wherever you prefer.
+    </p>
+    <pre class="cmd reveal"><span class="p">$</span> claude mcp add agent-maker -- npx tsx src/mcp/server.ts</pre>
+  </section>
+
+  <footer>
+    <span class="wordmark" style="font-size:0.85rem"><img src="/logo.svg" width="20" height="20" alt="" />Agent-Maker</span>
+    <span>Adrian · Sky · Alex — AITX × NVIDIA Claw Agent Hackathon, July 2026</span>
+    <span class="spacer"></span>
+    <a href="https://github.com/CisnerosCodes/agent-maker" target="_blank" rel="noopener">GitHub</a>
+    <a href="/evals">Evals</a>
+    <a href="/app">Dashboard</a>
+  </footer>
+
+  <script>
+    // Optional generated media (Higgsfield drop-ins): show only if present.
+    const mascot = document.getElementById("mascot");
+    mascot.onload = () => (mascot.style.display = "block");
+    mascot.onerror = () => mascot.remove();
+    const demoVideo = document.getElementById("demoVideo");
+    demoVideo.onloadedmetadata = () => (document.getElementById("demoWrap").style.display = "block");
+    demoVideo.onerror = () => document.getElementById("demoWrap").remove();
+
+    // Scroll reveals — plain scroll sweep (an IntersectionObserver can miss
+    // elements entirely when the user scrolls fast; this never does).
+    function sweepReveals() {
+      for (const el of document.querySelectorAll(".reveal:not(.in)")) {
+        if (el.getBoundingClientRect().top < innerHeight * 0.95) el.classList.add("in");
+      }
+    }
+    addEventListener("scroll", sweepReveals, { passive: true });
+    addEventListener("resize", sweepReveals, { passive: true });
+    // Anchor entry (/#security) jumps before any scroll event fires — sweep
+    // again on load, next frame, and hash changes so sections are never stuck hidden.
+    addEventListener("load", sweepReveals);
+    addEventListener("hashchange", sweepReveals);
+    requestAnimationFrame(sweepReveals);
+    setTimeout(sweepReveals, 200);
+    sweepReveals();
+  </script>
+
+  <script type="module">
+    // ---- 3D hero: the hive — a queen core spawning orbiting workers over a
+    // honeycomb lattice. Vendored Three.js; degrades to the plain background if
+    // WebGL is unavailable. Respects prefers-reduced-motion.
+    import * as THREE from "/vendor/three.module.min.js";
+
+    const canvas = document.getElementById("scene");
+    const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    } catch { canvas.remove(); }
+
+    if (renderer) {
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      const scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x0b0812, 0.045);
+
+      const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+      camera.position.set(0, 1.15, 8.2);
+
+      scene.add(new THREE.AmbientLight(0x6d28d9, 0.5));
+      const key = new THREE.PointLight(0xd9a441, 55, 30);
+      key.position.set(0, 2.5, 2);
+      scene.add(key);
+      const rim = new THREE.DirectionalLight(0xa78bfa, 1.3);
+      rim.position.set(-4, 3, 6);
+      scene.add(rim);
+
+      // Queen core
+      const hive = new THREE.Group();
+      const core = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(1.1, 1),
+        new THREE.MeshStandardMaterial({ color: 0x7c4bd6, flatShading: true, metalness: 0.25, roughness: 0.4, emissive: 0x3b1a70, emissiveIntensity: 0.4 })
+      );
+      const heart = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.48),
+        new THREE.MeshStandardMaterial({ color: 0xd9a441, emissive: 0xd9a441, emissiveIntensity: 1.4, roughness: 0.25 })
+      );
+      const cage = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(1.45, 1),
+        new THREE.MeshBasicMaterial({ color: 0xa78bfa, wireframe: true, transparent: true, opacity: 0.18 })
+      );
+      hive.add(core, heart, cage);
+      hive.position.y = 0.4;
+      scene.add(hive);
+
+      // Worker drones — small faceted bodies with wing planes, orbiting the queen
+      const workers = [];
+      const bodyGeo = new THREE.OctahedronGeometry(0.15);
+      const wingGeo = new THREE.PlaneGeometry(0.16, 0.09);
+      const wingMat = new THREE.MeshBasicMaterial({ color: 0xc4b5fd, transparent: true, opacity: 0.45, side: THREE.DoubleSide });
+      const violetMat = new THREE.MeshStandardMaterial({ color: 0x8b5cf6, flatShading: true, emissive: 0x5b21b6, emissiveIntensity: 0.6 });
+      const honeyMat = new THREE.MeshStandardMaterial({ color: 0xd9a441, flatShading: true, emissive: 0xa9761c, emissiveIntensity: 0.6 });
+      for (let i = 0; i < 18; i++) {
+        const g = new THREE.Group();
+        const body = new THREE.Mesh(bodyGeo, i % 3 === 0 ? honeyMat : violetMat);
+        body.scale.set(0.8, 1.25, 0.8);
+        body.rotation.x = Math.PI / 2;
+        const wl = new THREE.Mesh(wingGeo, wingMat); wl.position.set(-0.12, 0.1, 0); wl.rotation.z = 0.5;
+        const wr = new THREE.Mesh(wingGeo, wingMat); wr.position.set(0.12, 0.1, 0); wr.rotation.z = -0.5;
+        g.add(body, wl, wr);
+        g.userData = {
+          a: 2.3 + Math.random() * 2.4,
+          b: 2.0 + Math.random() * 2.2,
+          speed: (0.25 + Math.random() * 0.5) * (Math.random() < 0.5 ? 1 : -1),
+          phase: Math.random() * Math.PI * 2,
+          y0: 0.4 + (Math.random() - 0.5) * 2.4,
+          yAmp: 0.2 + Math.random() * 0.5,
+          yPhase: Math.random() * Math.PI * 2,
+          wl, wr,
+        };
+        workers.push(g);
+        scene.add(g);
+      }
+
+      // Honeycomb lattice floor
+      function hexGrid(rings, size) {
+        const pts = [];
+        for (let q = -rings; q <= rings; q++) {
+          for (let r = -rings; r <= rings; r++) {
+            const x = size * 1.5 * q, z = size * Math.sqrt(3) * (r + q / 2);
+            if (Math.hypot(x, z) > rings * size * 1.5) continue;
+            for (let i = 0; i < 6; i++) {
+              const a1 = (Math.PI / 3) * i + Math.PI / 6, a2 = (Math.PI / 3) * (i + 1) + Math.PI / 6;
+              pts.push(x + size * Math.cos(a1), 0, z + size * Math.sin(a1),
+                       x + size * Math.cos(a2), 0, z + size * Math.sin(a2));
+            }
+          }
+        }
+        return new Float32Array(pts);
+      }
+      const floorGeo = new THREE.BufferGeometry();
+      floorGeo.setAttribute("position", new THREE.BufferAttribute(hexGrid(9, 1.05), 3));
+      const floorMat = new THREE.LineBasicMaterial({ color: 0x5b21b6, transparent: true, opacity: 0.26 });
+      const floor = new THREE.LineSegments(floorGeo, floorMat);
+      floor.position.y = -2.3;
+      scene.add(floor);
+
+      // Ambient particles
+      const N = 650, pos = new Float32Array(N * 3);
+      for (let i = 0; i < N; i++) {
+        const r = 6 + Math.random() * 9, th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1);
+        pos[i * 3] = r * Math.sin(ph) * Math.cos(th);
+        pos[i * 3 + 1] = r * Math.cos(ph) * 0.6;
+        pos[i * 3 + 2] = r * Math.sin(ph) * Math.sin(th) - 2;
+      }
+      const pGeo = new THREE.BufferGeometry();
+      pGeo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      const points = new THREE.Points(pGeo, new THREE.PointsMaterial({
+        color: 0xa78bfa, size: 0.03, transparent: true, opacity: 0.6,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      }));
+      scene.add(points);
+
+      // Pointer parallax
+      let px = 0, py = 0;
+      addEventListener("pointermove", (e) => {
+        px = (e.clientX / innerWidth - 0.5) * 2;
+        py = (e.clientY / innerHeight - 0.5) * 2;
+      }, { passive: true });
+
+      function resize() {
+        const { clientWidth: w, clientHeight: h } = canvas;
+        renderer.setSize(w, h, false);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+      }
+      addEventListener("resize", resize);
+      resize();
+
+      const clock = new THREE.Clock();
+      function frame() {
+        const t = clock.getElapsedTime();
+        hive.rotation.y = t * 0.18;
+        cage.rotation.y = -t * 0.28;
+        cage.rotation.x = t * 0.11;
+        const pulse = 1 + Math.sin(t * 2.1) * 0.12;
+        heart.scale.setScalar(pulse);
+        key.intensity = 48 + Math.sin(t * 2.1) * 16;
+        floorMat.opacity = 0.2 + (Math.sin(t * 0.9) + 1) * 0.05;
+        points.rotation.y = t * 0.02;
+
+        for (const w of workers) {
+          const u = w.userData, a = t * u.speed + u.phase;
+          const nx = Math.cos(a) * u.a, nz = Math.sin(a) * u.b;
+          const ny = u.y0 + Math.sin(t * 1.3 + u.yPhase) * u.yAmp;
+          const eps = 0.02 * Math.sign(u.speed);
+          w.position.set(nx, ny, nz);
+          w.lookAt(Math.cos(a + eps) * u.a, ny, Math.sin(a + eps) * u.b);
+          const flap = Math.sin(t * 26 + u.phase) * 0.7;
+          u.wl.rotation.z = 0.5 + flap * 0.45;
+          u.wr.rotation.z = -0.5 - flap * 0.45;
+        }
+
+        camera.position.x += (px * 0.7 - camera.position.x) * 0.04;
+        camera.position.y += (1.15 - py * 0.45 - camera.position.y) * 0.04;
+        camera.lookAt(0, 0.3, 0);
+        renderer.render(scene, camera);
+        if (!reduced) requestAnimationFrame(frame);
+      }
+      frame();
+      if (reduced) { resize(); renderer.render(scene, camera); }
+    }
+  </script>
+</body>
+</html>

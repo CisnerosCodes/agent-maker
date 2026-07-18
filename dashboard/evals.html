@@ -1,34 +1,49 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Agent Corp — Instruction-Following Ladder</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent-Maker — Instruction-Following Ladder</title>
+  <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+  <link rel="stylesheet" href="/theme.css" />
   <style>
-    body { font-family: ui-monospace, monospace; background: #0b0e14; color: #d6deeb; margin: 2rem; }
-    h1 { font-size: 1.2rem; letter-spacing: 0.1em; }
-    a { color: #61c3ff; text-decoration: none; }
-    .meta { color: #8a93a6; font-size: 0.8rem; margin-bottom: 1rem; }
-    .note { border: 1px solid #4a4030; background: #201c14; color: #c9a86a; font-size: 0.75rem;
-            padding: 0.6rem 0.8rem; border-radius: 8px; margin-bottom: 1rem; max-width: 70rem; }
-    .summary { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
-    .stat { border: 1px solid #2a3040; border-radius: 8px; background: #121722; padding: 0.7rem 1rem; }
-    .stat .n { font-size: 1.3rem; color: #5ff59a; }
-    .stat .l { font-size: 0.65rem; color: #8a93a6; text-transform: uppercase; letter-spacing: 0.08em; }
-    table { border-collapse: collapse; width: 100%; max-width: 70rem; font-size: 0.8rem; }
-    th, td { border: 1px solid #2a3040; padding: 0.45rem 0.7rem; text-align: left; }
-    th { background: #121722; color: #8a93a6; font-weight: normal; }
-    td.pass { color: #5ff59a; } td.fail { color: #ff6b81; } td.partial { color: #f5a623; }
-    tr.tier td.tierlabel { color: #61c3ff; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; }
+    :root {
+      --paper: #faf9f6; --card: #ffffff;
+      --ink: #1c1626; --ink-dim: #5f5a6b; --ink-mute: #94909e;
+      --line: #e9e6e0; --line-dark: #d8d4cc;
+      --accent: #6d28d9; --accent-ink: #4c1d95;
+      --green: #157f4d; --amber: #96660a; --amber-soft: #f9f0da; --red: #b3234a;
+      --radius: 10px;
+    }
+    body { background: var(--paper); color: var(--ink); margin: 0; padding: 1.6rem clamp(1rem, 3vw, 2.5rem) 3rem; font-size: 14px; }
+    a { color: var(--accent-ink); text-decoration: none; }
+    h1 { font-family: var(--font-serif); font-weight: 400; font-size: 1.7rem; margin: 0 0 0.3rem; letter-spacing: 0.005em; }
+    h1 .dim { color: var(--ink-mute); }
+    .meta { color: var(--ink-mute); font-size: 0.8rem; margin-bottom: 1.2rem; }
+    select { background: var(--card); color: var(--ink); border: 1px solid var(--line-dark); border-radius: 8px; padding: 0.3rem 0.5rem; font-family: var(--font-sans); font-size: 0.8rem; }
+    .note { border: 1px solid #e5d9b8; background: var(--amber-soft); color: var(--amber); font-size: 0.78rem;
+            padding: 0.65rem 0.95rem; border-radius: var(--radius); margin-bottom: 1.1rem; max-width: 70rem; line-height: 1.55; }
+    .summary { display: flex; gap: 0.9rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
+    .stat { border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); padding: 0.85rem 1.15rem; min-width: 13rem; }
+    .stat .n { font-size: 1.5rem; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }
+    .stat .n .u { font-size: 0.72rem; color: var(--ink-mute); font-weight: 500; }
+    .stat .l { font-size: 0.68rem; color: var(--ink-dim); margin-top: 0.2rem; font-family: var(--font-mono); }
+    table { border-collapse: separate; border-spacing: 0; width: 100%; max-width: 76rem; font-size: 0.8rem; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+    th, td { border-bottom: 1px solid var(--line); padding: 0.55rem 0.8rem; text-align: left; }
+    tr:last-child td { border-bottom: none; }
+    th { background: #f6f4ef; color: var(--ink-dim); font-weight: 600; font-size: 0.72rem; }
+    td.pass { color: var(--green); font-weight: 500; } td.fail { color: var(--red); font-weight: 500; } td.partial { color: var(--amber); font-weight: 500; }
+    tr.tier td.tierlabel { color: var(--accent-ink); font-size: 0.64rem; text-transform: uppercase; letter-spacing: 0.12em; background: #f6f4ef; font-family: var(--font-mono); }
     details { margin: 0.2rem 0; }
-    summary { cursor: pointer; color: #8a93a6; font-size: 0.7rem; }
-    pre { background: #0e1314; border: 1px solid #2a3040; border-radius: 6px; padding: 0.5rem;
-          font-size: 0.7rem; white-space: pre-wrap; word-break: break-word; max-height: 14rem; overflow-y: auto; }
-    select { background: #1d2635; color: inherit; border: 1px solid #3a4358; border-radius: 6px; padding: 0.3rem; }
+    summary { cursor: pointer; color: var(--ink-mute); font-size: 0.7rem; }
+    pre { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 0.6rem;
+          font-family: var(--font-mono); font-size: 0.7rem; white-space: pre-wrap; word-break: break-word; max-height: 14rem; overflow-y: auto; }
+    .foot { font-size: 0.72rem; color: var(--ink-mute); max-width: 60rem; line-height: 1.6; }
   </style>
 </head>
 <body>
-  <h1>INSTRUCTION-FOLLOWING LADDER <span style="color:#8a93a6">// AGENT RELIABILITY HARNESS</span></h1>
-  <div class="meta"><a href="/">← org chart</a> &nbsp;·&nbsp; run: <select id="runSel"></select></div>
+  <h1>Instruction-Following Ladder <span class="dim">— agent reliability harness</span></h1>
+  <div class="meta"><a href="/app">Back to Mission Control</a> &nbsp;·&nbsp; <a href="/">Landing</a> &nbsp;·&nbsp; run: <select id="runSel"></select></div>
   <div id="note" class="note" style="display:none"></div>
   <div class="summary" id="summary"></div>
   <div id="matrix"></div>
@@ -53,7 +68,7 @@
 
       document.getElementById("summary").innerHTML = run.models.map(m => `
         <div class="stat">
-          <div class="n">${Math.round((m.csr ?? m.isr ?? 0) * 100)}% <span style="font-size:0.7rem;color:#8a93a6">CSR</span></div>
+          <div class="n">${Math.round((m.csr ?? m.isr ?? 0) * 100)}% <span class="u">CSR</span></div>
           <div class="l">${esc(m.model)}</div>
           <div class="l">ISR ${Math.round((m.isr ?? 0) * 100)}% · pass^${m.k ?? 1} ${Math.round((m.passK ?? 0) * 100)}%</div>
           <div class="l">cleared ${m.cleared}/${m.total} · break: ${m.breakingPoint ? esc(m.breakingPoint) : "none"}</div>
@@ -73,19 +88,19 @@
         const cells = run.models.map(m => {
           const r = m.levels[i];
           const csr = r.csr ?? r.passRate ?? 0, isr = r.isr ?? r.passRate ?? 0;
-          const icon = isr === 1 ? "✅" : isr === 0 ? "❌" : "◐";
+          const icon = isr === 1 ? "PASS" : isr === 0 ? "FAIL" : "PART";
           const detail = r.trials.map(t => {
             const cons = (t.constraints || []).map(c => `${c.pass ? "✓" : "✗"} ${c.axis ? "["+c.axis+"] " : ""}${esc(c.label)}`).join("\n");
             return `<details><summary>trial ${t.trial}: ${Math.round((t.csr ?? (t.pass?1:0))*100)}% CSR${t.pass ? " (full pass)" : ""}</summary>` +
               `<pre>${cons}\n---\n${esc(t.response)}</pre></details>`;
           }).join("");
-          return `<td class="${cls(isr)}">${icon} ${Math.round(csr*100)}%${detail}</td>`;
+          return `<td class="${cls(isr)}">${icon} · ${Math.round(csr*100)}%${detail}</td>`;
         }).join("");
         rows += `<tr><td>${i + 1}</td><td>${esc(base.title)}</td>${cells}</tr>`;
       }
       document.getElementById("matrix").innerHTML =
         `<table><tr><th>#</th><th>Level</th>${run.models.map(m => `<th>${esc(m.model)}</th>`).join("")}</tr>${rows}</table>` +
-        `<p style="font-size:0.7rem;color:#8a93a6;max-width:60rem">CSR = fraction of a level's constraints met (partial credit, AgentIF). ISR = all met (strict gate). pass^k = reliability: chance a random k of the trials all fully pass (τ²-bench). Adversarial levels split into [utility] and [security] axes (AgentDojo).</p>`;
+        `<p class="foot">CSR = fraction of a level's constraints met (partial credit, AgentIF). ISR = all met (strict gate). pass^k = reliability: chance a random k of the trials all fully pass (τ²-bench). Adversarial levels split into [utility] and [security] axes (AgentDojo).</p>`;
     }
 
     document.getElementById("runSel").addEventListener("change", (e) => { selected = Number(e.target.value); render(); });

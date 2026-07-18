@@ -15,7 +15,8 @@ import { workerMode, runResearch, runStoreBuilder, runCopywriter, gateOrEscalate
 import { escalations } from "../security/escalations.js";
 import { runMemory, type RunRecord } from "../memory/runs.js";
 import { missingFor } from "../config/env.js";
-import { companyProfile } from "../config/company.js";
+import { companyProfile, clearCompanyProfile } from "../config/company.js";
+import { friendlyError } from "../config/errors.js";
 import { matchPlaybook } from "../roles/library.js";
 
 const CEO_ID = "ceo-01";
@@ -67,15 +68,35 @@ class Orchestrator extends EventEmitter {
   // Red-team: feed a poisoned document to the research agent's ingestion gate.
   // Uses gateOrEscalate so the flow is identical to a real ingested source —
   // the gate flags it and a real, resolvable escalation is raised.
-  async injectAttack(payload: string): Promise<{ ok: boolean; agentId?: string; allowed?: boolean }> {
+  //
+  // Returns IMMEDIATELY (the escalation resolves later via the approve/deny
+  // buttons). Awaiting the human here made the HTTP POST /attack — and the MCP
+  // run_security_demo tool call — hang until someone clicked, which read as
+  // "the button does nothing".
+  async injectAttack(payload: string): Promise<{ ok: boolean; agentId?: string; error?: string }> {
     const agent = registry.get(this.lastResearchId ?? "") ?? registry.all().find((a) => a.spec.role === "research");
-    if (!agent) return { ok: false };
+    if (!agent) return { ok: false, error: "No research agent exists yet — launch a goal first (the attack targets the research agent's ingestion gate)." };
     const threadId = [...this.tasks.values()].find((t) => t.agentId === agent.id)?.goalId ?? "company";
+    const wasStatus = agent.status;
     bus.post({ threadId, from: "external-source", to: agent.id, kind: "finding", body: `Ingested document from research source: ${payload}` });
-    const allowed = await gateOrEscalate(agent, payload, "ingested_document", threadId, "Poisoned document from external research source");
-    if (allowed) bus.post({ threadId, from: agent.id, kind: "status", body: "Operator approved the ingested document — proceeding (note: OpenShell egress policy still blocks the exfil host independently)." });
-    else bus.post({ threadId, from: agent.id, kind: "system", body: "Poisoned document quarantined. Defense in depth: even if approved, the OpenShell policy denies the evil.example egress host." });
-    return { ok: true, agentId: agent.id, allowed };
+    // Fire and forget: the decision continuation runs when the human clicks.
+    gateOrEscalate(agent, payload, "ingested_document", threadId, "Poisoned document from external research source")
+      .then((allowed) => {
+        if (allowed) {
+          bus.post({ threadId, from: agent.id, kind: "status", body: "Operator approved the ingested document — proceeding (note: OpenShell egress policy still blocks the exfil host independently)." });
+        } else {
+          bus.post({ threadId, from: agent.id, kind: "system", body: "Poisoned document quarantined. Defense in depth: even if approved, the OpenShell policy denies the evil.example egress host." });
+        }
+        // Either way the demo attack is OVER — the agent goes back to what it
+        // was doing. Leaving it "blocked" after a deny left zombie rows with
+        // approve/deny buttons that had nothing left to resolve.
+        if (agent.status === "blocked") {
+          agent.status = wasStatus === "blocked" ? "waiting" : wasStatus;
+          registry.upsert(agent, "Back to previous status after attack demo resolution");
+        }
+      })
+      .catch((err) => console.error(`[attack] ${err.message}`));
+    return { ok: true, agentId: agent.id };
   }
 
   private ensureCeo() {
@@ -296,6 +317,23 @@ class Orchestrator extends EventEmitter {
     for (const task of this.tasks.values()) {
       if (task.status === "pending") {
         anyActive = true;
+        // A failed dependency can never complete — cascade the failure so the
+        // goal finishes instead of the dependent task waiting forever (which
+        // left the goal stuck "running" and the ticker spinning for good).
+        const upstreamFailed = task.dependsOn.some((d) => this.tasks.get(d)?.status === "failed");
+        if (upstreamFailed) {
+          task.status = "failed";
+          task.finishedAt = new Date().toISOString();
+          const agent = task.agentId ? registry.get(task.agentId) : undefined;
+          if (agent) {
+            agent.status = "terminated";
+            registry.upsert(agent, "Skipped — an upstream task failed, nothing to build on");
+            bus.post({ threadId: task.goalId, from: agent.id, kind: "system", body: `Skipping "${task.title}" — the task I depend on failed.` });
+          }
+          this.emitTask(task);
+          this.maybeFinishGoal(task.goalId);
+          continue;
+        }
         const ready = task.dependsOn.every((d) => this.tasks.get(d)?.status === "done");
         if (ready) this.startTask(task);
       } else if (task.status === "running") {
@@ -357,8 +395,9 @@ class Orchestrator extends EventEmitter {
       task.status = "failed";
       task.finishedAt = new Date().toISOString();
       agent.status = "failed";
-      registry.upsert(agent, `Task failed: ${err.message}`);
-      bus.post({ threadId: task.goalId, from: agent.id, kind: "system", body: `Task failed: ${err.message}` });
+      const human = friendlyError(err.message);
+      registry.upsert(agent, `Task failed: ${human}`);
+      bus.post({ threadId: task.goalId, from: agent.id, kind: "system", body: `Task failed: ${human}` });
       this.emitTask(task);
       this.maybeFinishGoal(task.goalId);
     } finally {
@@ -498,10 +537,34 @@ class Orchestrator extends EventEmitter {
     this.pendingPlans.clear();
     this.planResolvers.forEach((r) => r(false));
     this.planResolvers.clear();
+    this.lastResearchId = undefined;
     escalations.clear();
     if (wipeMemory) runMemory.clear();
+    // Full reset re-runs onboarding: the intake questions (niche, what you
+    // already have, starter team) are part of every fresh demo, not one-time
+    // setup. keepMemory resets preserve the profile along with the learning.
+    if (wipeMemory) clearCompanyProfile();
     bus.clear();
     registry.clear();
+  }
+
+  // Called once at server boot. The registry persists agents across restarts,
+  // but tasks live in memory — so after a restart, agents can be stranded
+  // showing "working"/"blocked" with no task behind them (zombie rows whose
+  // buttons resolve nothing). Reconcile: any in-flight agent with no live task
+  // is marked terminated with an honest log line.
+  reconcileStaleAgents() {
+    const inFlight = new Set(["provisioning", "starting", "working", "blocked"]);
+    for (const agent of registry.all()) {
+      if (agent.spec.role === "ceo") {
+        if (agent.status !== "waiting") { agent.status = "waiting"; registry.upsert(agent, "Server restarted — CEO back to waiting"); }
+        continue;
+      }
+      if (inFlight.has(agent.status) && ![...this.tasks.values()].some((t) => t.agentId === agent.id && (t.status === "pending" || t.status === "running"))) {
+        agent.status = "terminated";
+        registry.upsert(agent, "Server restarted — this agent's task did not survive; hire again with a new goal");
+      }
+    }
   }
 
   private emitTask(task: Task) { this.emit("task", task); }
