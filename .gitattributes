@@ -1,0 +1,19 @@
+# Normalize line endings across platforms. Windows devs (WSL2) + Linux prod share
+# these files; a CRLF shell script breaks on Linux ("bash\r: No such file or directory").
+* text=auto eol=lf
+
+# Scripts and configs that MUST stay LF regardless of contributor git config.
+*.sh    text eol=lf
+*.ts    text eol=lf
+*.js    text eol=lf
+*.json  text eol=lf
+*.yaml  text eol=lf
+*.yml   text eol=lf
+*.md    text eol=lf
+Dockerfile* text eol=lf
+
+# Binaries — never touch.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary

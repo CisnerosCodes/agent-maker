@@ -95,8 +95,10 @@ interface CliResult {
 function runCli(cmd: string, args: string[], timeoutMs: number): Promise<CliResult> {
   return new Promise((resolve) => {
     // Ensure ~/.local/bin is on PATH so `openshell` resolves in a non-interactive
-    // shell (issue #4224 ENOENT). The Friday-night symlink into /usr/local/bin is
-    // the durable fix; this is the belt-and-suspenders for the spawn env.
+    // shell (issue #4224 ENOENT). Prepending it to the spawn env here is the
+    // durable, host-static fix — no sudo symlink into /usr/local/bin, which would
+    // clobber a system-wide OpenShell on a pre-configured prod box. A missing dir
+    // is harmlessly ignored; a system install already on PATH still resolves.
     const home = process.env.HOME ?? process.env.USERPROFILE ?? "";
     const extraPath = home ? `${home}/.local/bin` : "";
     const PATH = [extraPath, process.env.PATH ?? ""].filter(Boolean).join(pathSep());
