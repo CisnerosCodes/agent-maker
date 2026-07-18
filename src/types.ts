@@ -1,6 +1,8 @@
 // Shared types for the agent-maker ecosystem.
 
-export type AgentRole = "ceo" | "research" | "store-builder" | "copywriter" | string;
+// strategist/analyst are real pure-LLM roles (worker-capability §1), no longer
+// ghosts. The trailing `string` keeps scratch/custom roles assignable.
+export type AgentRole = "ceo" | "research" | "store-builder" | "copywriter" | "strategist" | "analyst" | string;
 
 export type AgentStatus =
   | "provisioning" // Factory is issuing identity + policy

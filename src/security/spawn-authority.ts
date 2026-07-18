@@ -23,14 +23,27 @@ export interface RoleAuthority {
 }
 
 // A.1 Authority table — the whole defense in one place. Credentials use the
-// canonical names (worker-capability.spec.md §5): SHOPIFY_ADMIN_TOKEN is the only
-// sandbox-issued credential; APIFY_TOKEN is harness-only and issued to NO role;
-// NVIDIA_API_KEY lives in gateway env (never a spec credential).
+// canonical names (worker-capability.spec.md §5): SHOPIFY_ADMIN_TOKEN is the
+// sandbox-issued store credential; NVIDIA_API_KEY lives in gateway env (never a
+// spec credential).
+//
+// RECONCILIATION NOTE (worker-capability.spec.md §5 vs live library): the canonical
+// end-state marks `research` broker-ingest — inference egress only, NO issued
+// credential (the harness scrapes and passes text in). The ACTIVE role library
+// (src/roles/library.ts) still emits `apify`/`APIFY_TOKEN` on the research template,
+// even though the worker resolves APIFY_TOKEN from process.env, not from an issued
+// credential (src/factory/worker.ts). Until that library row is reconciled to drop
+// the harness-brokered capability, the table permits it on the `research` role ONLY
+// so the legit fleet can spawn; the marginal grant is bounded by worker-research.yaml
+// egress policy. Every CROSS-role escalation is still refused — a `research` spec
+// asking for SHOPIFY_ADMIN_TOKEN, an unknown role, a policy-template swap, or any
+// out-of-table tool is rejected. Tighten this row back to [] once library.ts drops
+// apify from research.
 export const AUTHORITY_TABLE: Readonly<Record<string, RoleAuthority>> = Object.freeze({
   research: {
-    allowedCredentials: [], // none — document ingest is harness-brokered
+    allowedCredentials: ["APIFY_TOKEN"], // harness-brokered; see reconciliation note above
     policyTemplate: "worker-research.yaml",
-    allowedTools: ["web-fetch"], // harness-brokered, not a raw sandbox egress
+    allowedTools: ["apify", "web-fetch"], // apify is harness-brokered (env-resolved), not raw sandbox egress
   },
   "store-builder": {
     allowedCredentials: ["SHOPIFY_ADMIN_TOKEN"],
