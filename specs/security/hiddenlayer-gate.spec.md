@@ -132,7 +132,8 @@ Flip default from fail-open to fail-closed before demo (single const, e.g. `FAIL
 3. **Exfil/data-leakage payload** (embedded secret + external URL) → `verdict: "blocked"`.
 4. **Token expiry**: force a stale token → confirm 401 → single refresh+retry → success (no infinite loop).
 5. **API down** (bad URL) → confirm fail-closed `flagged` + `scanner_unavailable`, no crash, no silent pass.
-6. Feed the same poisoned doc used in the money demo → confirm HiddenLayer flags it AND (separately) OpenShell policy blocks the exfil host. Cross-links to `poisoned-doc.spec.md` (to write).
+6. Feed the same poisoned doc used in the money demo → confirm HiddenLayer flags it AND (separately) OpenShell policy blocks the exfil host. Cross-links to `poisoned-doc-demo.spec.md`.
+7. **Worker dispatch seam (`nemoclaw` mode):** dispatch a task to a sandbox worker whose prompt carries an injection → the in-bound `scan()` in `dispatch()` flags it before the sandbox model runs; a completion carrying a leak → out-bound `scan()` flags the `model_response`. Confirms harness-side depth over sandbox workers. Cross-ref `nemoclaw-spawn.spec.md` §6.1.
 
 ---
 

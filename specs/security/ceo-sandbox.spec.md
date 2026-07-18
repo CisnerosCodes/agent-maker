@@ -63,16 +63,60 @@ point instead of widening the most-targeted sandbox's egress.
 
 ```yaml
 # CEO sandbox — contained boss. Higher trust than a worker, still not the host.
-role: ceo
-network:
-  egress:
-    - nvidia_routed_inference     # model I/O
-    - slack_api                   # goal in / escalation + heartbeat out
-    # gateway_spawn ONLY if §2 fallback (b) chosen; omit under (a)
-filesystem:
-  # no host FS; scratch only
+# REAL schema (see openshell-policy.spec.md §2). Earlier drafts here used a made-up
+# `network: egress:` shape — that was a sketch, not valid. This is the real one.
+version: 1
+
+filesystem_policy:
+  include_workdir: true          # scratch only; no host FS
+  read_write:
+    - /workspace/**
+    - /tmp
+
 process:
-  # allow spawn CLIs ONLY under fallback (b); omit under (a)
+  run_as_user: sandbox
+  run_as_group: sandbox
+
+landlock:
+  compatibility: best_effort
+
+network_policies:
+  slack_socket:
+    name: slack-socket-mode
+    endpoints:
+      # Slack Socket Mode is an OUTBOUND websocket (goal in / escalation + heartbeat
+      # out over one persistent connection) — not plain REST. Miss this and the CEO
+      # cannot talk to Slack the moment it runs contained.
+      - host: "*.slack.com"
+        port: 443
+        protocol: websocket
+        enforcement: enforce
+        websocket_credential_rewrite: true   # app token via openshell:resolve:env:SLACK_APP_TOKEN
+      - host: slack.com                       # Web API (chat.postMessage, etc.) over REST
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-write
+        request_body_credential_rewrite: true # bot token via openshell:resolve:env:SLACK_BOT_TOKEN
+    binaries:
+      - path: /usr/local/bin/openclaw
+      - path: /usr/bin/node
+  nvidia_inference:
+    name: nvidia-inference
+    endpoints:
+      # Only if routed inference does NOT exit via the localhost gateway (open item §6).
+      - host: integrate.api.nvidia.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: read-write
+        request_body_credential_rewrite: true
+    binaries:
+      - path: /usr/local/bin/openclaw
+      - path: /usr/bin/node
+  # gateway_spawn network_policy ONLY under §2 fallback (b); omit under (a) — spawn
+  # goes through the host broker, so the CEO sandbox needs no gateway egress and no
+  # spawn-CLI binaries in its process/binaries list.
 ```
 
 All CEO model I/O still routes through `guarded()` — containment does not
@@ -117,3 +161,10 @@ Under fallback (a), the host also starts the spawn broker before the CEO loop.
       per ORCHESTRATION §2).
 - [ ] Reconcile CEO entrypoint with `factory.ts` so spawn works from inside the
       sandbox (or via broker).
+- [ ] **Slack Socket Mode websocket egress.** Confirm OpenShell `protocol: websocket`
+      + `websocket_credential_rewrite` work for the persistent `wss://` connection Socket
+      Mode opens (not just REST). This is the one thing that will break the CEO the
+      moment it runs contained — the Slack-triggered demo opener depends on it. If
+      websocket egress is not supported, fall back to Slack Events API over HTTP (needs
+      an inbound webhook route, a bigger change) or run Slack I/O through the same host
+      broker as spawn.

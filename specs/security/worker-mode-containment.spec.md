@@ -19,6 +19,12 @@ Factory step 3 (ORCHESTRATION §2) runs a worker in one of two modes:
 in-process loop keeps the demo alive — same registry events, same dashboard, same
 gate.
 
+**Gate coverage in each mode (they are not identical):**
+- `local`: `guarded()` wraps *every* in-process model I/O and tool result — finest-grained gate coverage, zero containment.
+- `nemoclaw`: model I/O runs inside the sandbox, so the gate sees it at the **`dispatch` boundary** (prompt in, completion out) plus **harness-brokered ingest** — full containment, slightly coarser gate reach on in-sandbox tool I/O (closed only by the `network_middlewares` stretch). See `nemoclaw-spawn.spec.md` §6.1.
+
+So the two axes trade off: `local` maximizes gate granularity, `nemoclaw` maximizes containment. The demo runs `nemoclaw` because containment is the load-bearing claim; the dispatch seam keeps the HiddenLayer depth story honest there.
+
 ---
 
 ## 2. Ruling: local mode is dev/test only, NOT production

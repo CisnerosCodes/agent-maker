@@ -12,6 +12,15 @@ Goal: one attack, two independent kill points, both visible on screen. **Detecti
 
 An indirect prompt injection: attacker text arrives as *research data* and tries to become *instructions*. Delivered to the Research worker through its normal Apify document-ingest path (so it's realistic, not hand-fed to the model).
 
+> **Where the scan happens (critical — Layer 1 dies if this is wrong):** the ingest
+> fetch is **harness-side**, not in-sandbox. The Factory/dispatcher pulls the Apify
+> result, runs `scan(doc, "ingested_document", "research-1")`, and only then hands the
+> text into the sandbox worker. If the Research worker fetched Apify from *inside* the
+> OpenShell sandbox, the harness gate would never see the document and Layer 1 would
+> silently never fire — the demo would show only Layer 2. See
+> `nemoclaw-spawn.spec.md` §6.1 and `openshell-policy.spec.md` §3 (research policy
+> therefore does **not** allowlist Apify egress from the sandbox).
+
 Artifact: `demo/poisoned-shoe-report.md` (to create when flag lifts). Content shape:
 
 ```markdown
@@ -60,6 +69,7 @@ Keep it a real-looking report so the demo reads as a plausible supply-chain/data
 4. **OpenShell fires:** show the audit log line — the agent tried `POST evil.example`, got `policy_denied`. Narrate: *"The policy blocks the exfil endpoint regardless — enforced outside the agent, so a compromised agent can't bypass it."*
 5. Show the agent only ever saw a credential placeholder (`openshell:resolve:env:SHOPIFY_TOKEN`), never the real token.
 6. Land it: *"Detection AND prevention, independent layers. Autonomous agents holding real credentials are exactly this threat model."* (plan §Sponsor Tech line.)
+7. **Heartbeat beat (claw-agent eligibility).** After the block, let the CEO's next heartbeat tick react on camera — it reads the registry, sees the research agent `blocked`, and autonomously reassigns / retries / posts one Slack status line. No human message triggers it. Narrate: *"Nobody prompted that — the heartbeat did. Time/state-triggered, not prompt-triggered."* This is the one on-screen moment that proves the "heartbeat-driven, not solely prompt-driven" definition (Hackathon_Docs §What is a Claw Agent), which the Slack-triggered opening does not.
 
 Total: ~60–90s. Boring-reliable beats flashy.
 
@@ -93,3 +103,5 @@ Total: ~60–90s. Boring-reliable beats flashy.
 - [ ] Confirm the exfil attempt actually reaches the egress layer (agent must *try* the POST for the `policy_denied` log to appear) — may need to nudge the model to comply for the demo, or show the policy denial via a manual `curl` from inside the sandbox if the model refuses on its own.
 - [ ] Pick the exfil host: `evil.example` (RFC 2606 reserved, safe) — confirm it's not silently resolvable/allowlisted.
 - [ ] Coordinate with Adrian: the Slack approve/deny card + dashboard red-state must render for Layer 1 (his plumbing, gate spec `onFlagged` callback).
+- [ ] Confirm the exfil target `NVIDIA_API_KEY` is a placeholder in-sandbox (not a raw `nvapi-` key). The injection tells the agent to read all three tokens — if inference key is real in sandbox env, §5.5 fails. Cross-ref `openshell-policy.spec.md` §6 open items.
+- [ ] Confirm ingest is wired through the harness broker (not in-sandbox Apify) so Layer 1 fires — cross-ref `nemoclaw-spawn.spec.md` §6.1, `openshell-policy.spec.md` §3.
