@@ -9,7 +9,7 @@ import { registry } from "../src/registry/registry.js";
 import { bus } from "../src/bus/bus.js";
 import { orchestrator } from "../src/orchestrator/orchestrator.js";
 import { escalations } from "../src/security/escalations.js";
-import { scan } from "../src/security/gate.js";
+import { heuristicScan } from "../src/security/detect.js";
 import { governance } from "../src/governance/governance.js";
 
 const PORT = Number(process.env.DASHBOARD_PORT ?? 4000);
@@ -30,16 +30,15 @@ orchestrator.on("planApproval", (p) => broadcast("planApproval", p));
 escalations.on("escalation", (esc) => broadcast("escalation", esc));
 governance.on("change", (mode) => broadcast("autonomy", { mode }));
 
-// SecurityGate on the bus: scan every message; annotate detections so the
-// dashboard shows the gate is watching inter-agent traffic (depth of
-// instrumentation). Worker-side blocking/escalation happens in worker.ts;
-// here we surface a passive flag on chat/finding traffic.
-bus.on("message", async (msg) => {
+// SecurityGate on the bus: a passive "gate is watching" signal on inter-agent
+// traffic. HEURISTICS ONLY here (C3) — the authoritative HiddenLayer scan runs
+// once at the worker boundary (gateOrEscalate), never per bus message. Calling
+// the HL API on every chatter line would exhaust the free-tier quota mid-demo
+// and double-scan already-gated content. heuristicScan is keyless and synchronous.
+bus.on("message", (msg) => {
   if (msg.from === "user" || msg.kind === "system") return;
-  try {
-    const result = await scan(msg.body, "tool_result", msg.from);
-    if (result.verdict !== "clean") broadcast("gate", { messageId: msg.id, from: msg.from, verdict: result.verdict, categories: result.categories });
-  } catch { /* heuristics never throw; ignore */ }
+  const categories = heuristicScan(msg.body);
+  if (categories.length) broadcast("gate", { messageId: msg.id, from: msg.from, verdict: "flagged", categories });
 });
 
 function snapshot() {
