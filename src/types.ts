@@ -4,6 +4,8 @@
 // ghosts. The trailing `string` keeps scratch/custom roles assignable.
 export type AgentRole = "ceo" | "research" | "store-builder" | "copywriter" | "strategist" | "analyst" | string;
 
+export type ContainmentMode = "nemoclaw" | "local";
+
 export type AgentStatus =
   | "provisioning" // Factory is issuing identity + policy
   | "starting"     // NemoClaw sandbox booting
