@@ -18,9 +18,12 @@
 // scanner returns `flagged` + `scanner_unavailable` — it NEVER silently passes.
 // Only the no-credentials dev path fails open, and it warns loudly.
 
-import type { IoKind, ScanResult, Verdict } from "../types.js";
+import type { IoKind, ScanResult, Verdict, AgentRecord } from "../types.js";
 import { heuristicScan } from "./detect.js";
 import { getToken, invalidateToken, hlConfigured } from "./hl-auth.js";
+import { bus } from "../bus/bus.js";
+import { escalations } from "./escalations.js";
+import { governance } from "../governance/governance.js";
 
 const HL_API_URL = process.env.HIDDENLAYER_API_URL ?? "https://api.hiddenlayer.ai";
 const HL_PROJECT_ID = process.env.HIDDENLAYER_PROJECT_ID;
@@ -122,6 +125,53 @@ function postInteraction(body: string, token: string): Promise<Response> {
     body,
     signal: AbortSignal.timeout(15000),
   });
+}
+
+// CEO helper: run a prompt through the security gate, call the model, then
+// scan the response. Returns the model response text if clean/flagged-autoapproved,
+// throws if blocked. CEO model I/O MUST go through this (ceo-heartbeat.spec.md §5).
+export async function guarded(
+  agent: AgentRecord,
+  prompt: string,
+  complete: (prompt: string) => Promise<string>,
+  threadId: string,
+  reason: string
+): Promise<string> {
+  // Inbound scan: prompt
+  const promptScan = await scan(prompt, "user_prompt", agent.id);
+  if (promptScan.verdict === "blocked") {
+    bus.post({ threadId, from: agent.id, kind: "system", body: `CEO prompt blocked: ${promptScan.categories.join(", ")} — ${reason}` });
+    throw new Error(`CEO prompt blocked: ${promptScan.categories.join(", ")}`);
+  }
+  if (promptScan.verdict === "flagged" && !governance.autoApprovesFlagged(promptScan.verdict)) {
+    // In assisted/supervised, flagged prompts need approval too
+    const { decision } = escalations.create(agent.id, reason, promptScan, prompt);
+    const verdict = await decision;
+    if (verdict === "denied") {
+      bus.post({ threadId, from: agent.id, kind: "system", body: `Operator denied CEO prompt: ${reason}` });
+      throw new Error("CEO prompt denied by operator");
+    }
+  }
+
+  // Call the model
+  const response = await complete(prompt);
+
+  // Outbound scan: response
+  const responseScan = await scan(response, "model_response", agent.id);
+  if (responseScan.verdict === "blocked") {
+    bus.post({ threadId, from: agent.id, kind: "system", body: `CEO response blocked: ${responseScan.categories.join(", ")} — ${reason}` });
+    throw new Error(`CEO response blocked: ${responseScan.categories.join(", ")}`);
+  }
+  if (responseScan.verdict === "flagged" && !governance.autoApprovesFlagged(responseScan.verdict)) {
+    const { decision } = escalations.create(agent.id, reason, responseScan, response);
+    const verdict = await decision;
+    if (verdict === "denied") {
+      bus.post({ threadId, from: agent.id, kind: "system", body: `Operator denied CEO response: ${reason}` });
+      throw new Error("CEO response denied by operator");
+    }
+  }
+
+  return response;
 }
 
 function mapFindings(raw: any): ScanResult {
