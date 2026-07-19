@@ -1,9 +1,11 @@
 # Agent-Maker
 
-**A self-expanding agent company in a box.** A CEO agent that hires its own workforce — each worker born with a scoped identity, an OpenShell sandbox it cannot escape, and HiddenLayer runtime security watching every token. Controlled from Slack, observed on a live dashboard.
+**A self-expanding agent company in a box.** A CEO agent that hires its own workforce — each worker born with a scoped identity, a rendered OpenShell sandbox policy (enforced when a NemoClaw runtime is present; honestly badged UNCONTAINED otherwise), and HiddenLayer runtime security watching every token. Controlled from Slack, observed on a live dashboard.
 
 Built for the AITX Community x NVIDIA Claw Agent Hackathon (July 2026).
 Primary track: **Integrating Runtime Security by HiddenLayer**. Co-headline: **Best Use of NemoClaw + OpenShell**.
+
+**Not a demo:** six recorded end-to-end business runs (commerce, social, SEO, support, fact-check) on real Claude inference, with full event recordings committed — see [docs/PROOF_OF_REAL_RUNS.md](docs/PROOF_OF_REAL_RUNS.md) and `data/recordings/`.
 
 ## Setup (do this first)
 
@@ -186,7 +188,7 @@ Nothing here is a static download dressed up as live — every source is fetched
 
 | Data | Source & provenance | How it's used |
 |---|---|---|
-| Product catalog (research agent) | **DummyJSON** live API — `https://dummyjson.com/products/search` (`src/factory/worker.ts:72,77`), fetched per run, niche-matched | Grounds the research agent's findings. Labeled **sample catalog** on-screen — never presented as live scrape. |
+| Product catalog (research agent) | **DummyJSON** live API — `https://dummyjson.com/products/search` (`src/factory/worker.ts:74,79`), fetched per run, niche-matched | Grounds the research agent's findings. Labeled **sample catalog** on-screen — never presented as live scrape. |
 | Live product scrape (optional) | **Apify** actor via `run-sync-get-dataset-items` (`src/factory/worker.ts:53`), only when `APIFY_TOKEN` + `APIFY_ACTOR` set | Upgrades research from sample catalog to a real scrape; source string names the actor honestly. |
 | Run memory | **Self-generated** — every completed goal written to `data/runs.json` | Recursive-intelligence loop: run 2 of a niche recalls run 1, skips re-scrapes. This is the agent's own compounding knowledge base. |
 | Eval prompts + grader rules | **Authored by us** — `src/evals/levels.ts`, 20 levels across 5 tiers, each with a deterministic grading rule | The Instruction-Following Ladder; committed run artifacts in `data/evals/`. |

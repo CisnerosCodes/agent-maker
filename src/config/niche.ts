@@ -2,7 +2,9 @@
 // Used by orchestrator (planning + execution) and company profile first-goal suggestions.
 
 export function nicheFor(goalText: string): string {
-  const forMatch = goalText.match(/\bfor\b\s+(.+?)(?:\s*—|$)/i)?.[1];
+  // "for X" and "selling X" both name the niche; stop at a dash or comma so
+  // "for trending sneakers, 3 products" extracts just the niche.
+  const forMatch = goalText.match(/\b(?:for|selling)\b\s+(.+?)(?:\s*—|,|$)/i)?.[1];
   const dashPart = goalText.split("—").length > 1
     ? goalText.split("—").pop()!.split(",")[0]
     : undefined;

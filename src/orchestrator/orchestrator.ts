@@ -99,9 +99,12 @@ export class Orchestrator extends EventEmitter {
             ? "Operator approved the ingested document — proceeding (note: OpenShell egress policy still blocks the exfil host independently)."
             : "Operator approved the ingested document — proceeding. (This run is UNCONTAINED — no OpenShell egress backstop; set WORKER_MODE=nemoclaw for layer-2 containment.)" });
         } else {
+          // Run-1 learning: don't credit "the operator" — since the exfil
+          // heuristics moved to the blocked tier, the gate usually stops this
+          // AUTONOMOUSLY (no human needed); an operator deny is the other path.
           bus.post({ threadId, from: agent.id, kind: "system", body: contained
-            ? "Poisoned document quarantined. Defense in depth: even if approved, the OpenShell policy denies the evil.example egress host."
-            : "Poisoned document quarantined by the operator (layer 1). Layer-2 note: this run is UNCONTAINED — set WORKER_MODE=nemoclaw for the independent OpenShell egress block." });
+            ? "Poisoned document quarantined at layer 1 (SecurityGate auto-block, or operator deny — see the gate line above). Defense in depth: even if approved, the OpenShell policy denies the evil.example egress host."
+            : "Poisoned document quarantined at layer 1 (SecurityGate auto-block, or operator deny — see the gate line above). Layer-2 note: this run is UNCONTAINED — set WORKER_MODE=nemoclaw for the independent OpenShell egress block." });
         }
         // Either way the demo attack is OVER — the agent goes back to what it
         // was doing. Leaving it "blocked" after a deny left zombie rows with
@@ -170,7 +173,9 @@ export class Orchestrator extends EventEmitter {
 
     // Clarify before hiring: a store goal with no niche is underspecified.
     const storeLike = /store|shop|shopify|e-?commerce/i.test(text);
-    const hasNiche = /\bfor\b\s+\S+/i.test(text);
+    // Run-1 learning (Atlas): "…store selling handmade ceramic planters" was
+    // asked for its niche AGAIN because only "for X" counted as having one.
+    const hasNiche = /\b(for|selling|of)\b\s+\S+/i.test(text) || /—\s*\S+/.test(text);
     if (storeLike && !hasNiche) {
       goal.status = "clarifying";
       this.emitGoal(goal);
@@ -807,9 +812,14 @@ export class Orchestrator extends EventEmitter {
       const researchBudget = researchTask?.estimateSec ?? 0;
       learnLine = ` Learning: reused ${prior.products.length} findings from ${prior.runId} — 0 re-scrapes, 0 research API calls, skipped the ${researchBudget}s research step. Total ${total}s vs ${prior.totalSec}s (${saved}s faster; the wall-clock gap grows with real scrape cost).`;
     }
+    // Run-1 learning (Atlas): say plainly which tasks ran real inference and
+    // which were labeled simulation — a sim store URL in a "complete" summary
+    // without the tally read as an overclaim.
+    const realCount = tasks.filter((t) => t.mode === "real").length;
+    const modeLine = ` ${realCount}/${tasks.length} tasks ran REAL${realCount < tasks.length ? "; the rest labeled simulation (connect the missing keys in Connections to flip them)" : " — no simulation in this run"}.`;
     bus.post({
       threadId: goalId, from: "ceo", kind: "status",
-      body: `Goal complete (run #${this.runNumber.get(goalId)} for "${niche}"). Deliverable: ${goal.deliverable}. Workforce of ${tasks.length} finished in ${total}s (est ${tasks.reduce((s, t) => s + t.estimateSec, 0)}s).${learnLine}`,
+      body: `Goal complete (run #${this.runNumber.get(goalId)} for "${niche}"). Deliverable: ${goal.deliverable}. Workforce of ${tasks.length} finished in ${total}s (est ${tasks.reduce((s, t) => s + t.estimateSec, 0)}s).${modeLine}${learnLine}`,
     });
   }
 

@@ -370,9 +370,23 @@ export const PLAYBOOKS: Playbook[] = [
   },
 ];
 
+// Run-3 learning (Sage): first-match routing sent an SEO goal ("…webshop —
+// search rankings, keyword set, listings") to store-launch because "webshop"
+// contains "shop". Score every playbook by how many of its keywords actually
+// hit and pick the strongest signal; ties keep array order. market-research
+// stays the fallback when nothing matches at all.
 export function matchPlaybook(goalText: string): Playbook {
-  return PLAYBOOKS.find((p) => p.id !== "market-research" && p.match.test(goalText))
-    ?? PLAYBOOKS.find((p) => p.id === "market-research")!;
+  let best: Playbook | undefined;
+  let bestScore = 0;
+  for (const p of PLAYBOOKS) {
+    if (p.id === "market-research") continue;
+    const hits = goalText.match(new RegExp(p.match.source, "gi"))?.length ?? 0;
+    if (hits > bestScore) {
+      best = p;
+      bestScore = hits;
+    }
+  }
+  return best ?? PLAYBOOKS.find((p) => p.id === "market-research")!;
 }
 
 export function roleNames(): string[] {
