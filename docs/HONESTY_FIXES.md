@@ -35,13 +35,16 @@ The AUTO fallback to `local` is NOT silent — it surfaces three ways:
   (`dashboard/index.html` row `:676`, detail `:758`, raw JSON `:783`). This is the honest
   surface — every agent wears its real containment state.
 
-🔴 **Residual dishonesty risk (accepted, badge is source of truth):**
-- **Landing page does NOT reflect real containment.** The scripted Mission Control mini-demo
-  and hero copy imply "secured / sandboxed" unconditionally; `security gate: connected` is
-  hardcoded. A visitor who never opens `/app` sees only the secured framing. This is the copy
-  half of item #1 — the CODE is honest (badges), the MARKETING is not. Fix in the copy pass:
-  soften hero/how-it-works to "sandbox-ready; contained when the toolchain is present," or add
-  a CONTAINED/UNCONTAINED indicator to the scripted demo.
+**Copy pass shipped (2026-07-19):**
+- Hero + meta description: "each one **sandboxed**" → "each one **sandbox-ready**" (`landing.html:7,498`).
+- How-it-works 03: "Every worker lives in a cell it cannot escape" now conditioned —
+  "With the NemoClaw + OpenShell toolchain present, every worker lives in a cell it cannot
+  escape; without it, workers run break-glass and wear an UNCONTAINED badge" (`landing.html:719`).
+
+🔴 **Residual (accepted, badge is source of truth):**
+- **Scripted mini-demo still shows `security gate: connected` hardcoded.** It's labeled
+  "SCRIPTED WALKTHROUGH", and the gate's heuristic floor really is always on (only *containment*
+  is conditional, now disclosed in how-it-works 03). Not softened further.
 - **No global dashboard banner.** `/app` shows per-agent badges but no top-level "workers
   UNCONTAINED — no toolchain" summary; with a single agent the badge is easy to miss.
   Deliberately NOT added — per-agent badges are the agreed source of truth. Revisit only if
@@ -78,13 +81,15 @@ only-failing-configured → order `[]` → `poolBrain()` null (sim). Typecheck c
   nothing (no failures present); it only becomes a hard gate once the **actual demo models** are
   laddered under their exact ids. Action for a strong demo: `npm run eval` on the exact
   Claude + Nemotron slugs the workers use, so their verdicts are real, not advisory.
-- Cosmetic: `LEVELS` holds **21** entries; copy + `levels.ts` header say "20". Fix in the copy pass.
+- Cosmetic: ~~`LEVELS` holds **21** entries; copy + `levels.ts` header say "20".~~ ✅ FIXED
+  2026-07-19 — `LEVELS` verified 21 titled entries (source of truth); copy now says "21-level"
+  (`landing.html:756,868` feature card + FAQ) and `levels.ts:1` header updated to 21.
 
 **Files:** `src/providers/pool.ts`, `.env.example`. Copy/count: `dashboard/landing.html`, `src/evals/levels.ts`.
 
 ---
 
-## 3. Stripe partner 🔴 OPEN
+## 3. Stripe partner ✅ DONE (2026-07-19)
 
 **Claim:** marquee "SECURED & POWERED BY … **STRIPE**", story "connector-1 wires Stripe",
 storefront footer "Payments by Stripe".
@@ -92,15 +97,16 @@ storefront footer "Payments by Stripe".
 **Reality:** **zero Stripe code** in `src` (grep confirms). Shopify + Apify are real; Stripe
 is not integrated at all. Only fully-absent partner on the marquee.
 
-**Fix options:**
-- **(a)** remove STRIPE from the marquee + the sneaker story + storefront footer. Cheapest.
-- **(b)** add a real Stripe call (payments/checkout in `store-builder`). Big scope.
+**Fix shipped (option a — removed everywhere):** every Stripe mention pulled from `landing.html`:
+marquee (both track groups), sneaker-story connector line, storefront footer, plus the scripted
+mini-demo (roles line, deliver panel, task row, and the JS deliverables string). Grep for
+`stripe` in `landing.html` now returns nothing. Shopify/Apify (real) untouched.
 
-**Files:** `dashboard/landing.html` (marquee ~line 694-695, story ~line 795, footer ~line 678).
+**Files:** `dashboard/landing.html`.
 
 ---
 
-## 4. Supervised plan-approval copy 🔴 OPEN
+## 4. Supervised plan-approval copy ✅ DONE (2026-07-19)
 
 **Claim:** FAQ "In **supervised mode (the default)** every org plan and every security
 escalation stops and waits for your approve or deny" (`landing.html` ~line 864). How-it-works
@@ -111,18 +117,25 @@ In supervised (default) the plan proceeds straight to hire (`orchestrator.plan()
 "Hiring now"). Only *escalations* gate in supervised. Mini-demo also shows a plan-approval
 banner while labeled "supervised" — reinforces the wrong claim.
 
-**Fix options:**
-- **(a) fix copy** — plan approval is an ASSISTED-mode behavior; supervised gates escalations
-  only. Update FAQ + how-it-works + mini-demo label. Cheapest, matches code.
-- **(b) fix code** — make supervised also gate plans (`governance.planGate()` → `assisted ||
-  supervised`). Changes default friction.
+**Fix shipped (option a — copy now matches code):**
+- FAQ "Do agents act without my approval?": supervised (default) now stated to gate **security
+  escalations** only; plan approval reassigned to **assisted** ("Switch to assisted — the most
+  hands-on setting — and every org plan waits for approval too, before a single worker is hired").
+- How-it-works 04: "approve/deny on every plan and security escalation" →
+  "approve/deny on every security escalation — and, in assisted mode, on every org plan before hiring".
 
-**Files:** `dashboard/landing.html` (FAQ, how-it-works 04, mini-demo strip), or
-`src/governance/governance.ts` `planGate()`.
+- Mini-demo: the scripted walkthrough shows BOTH a plan-approval banner (`mdPlan`) and a security
+  escalation, but its strip previously read `autonomy: supervised` — where plans do NOT gate. Flipped
+  all 4 strip labels to `autonomy: assisted` (the hands-on setting where both gates fire), so every
+  beat the demo shows is truthful. Default is still supervised (stated in FAQ); the demo just walks
+  the most-hands-on mode.
+
+**Files:** `dashboard/landing.html` (FAQ, how-it-works 04, mini-demo strip ×4). Code
+(`governance.planGate()`) left as-is.
 
 ---
 
-## 5. Capability-catalog + toolsmith stories 🔴 OPEN
+## 5. Capability-catalog + toolsmith stories ✅ DONE (2026-07-19)
 
 **Claim:** catalog note "a **capability catalog** — commerce, payments, media, research,
 deploy, outreach — the CEO searches when it drafts an org … a **tool the colony builds
@@ -133,12 +146,21 @@ itself**" (`landing.html` ~line 802-807). Stories use named agents `toolsmith-1`
 (`src/roles/library.ts`). No toolsmith / self-building-tool code. None of those story agents
 exist — store playbook is research → store-builder → copywriter only.
 
-**Fix options:**
-- **(a)** frame the stories unambiguously as ROADMAP (not "shipped"); drop or asterisk the
-  named agents that don't exist. Keep the real playbook roles. Cheapest.
-- **(b)** build a toolsmith role + capability catalog. Large.
+**Fix shipped (option a — framed honestly):**
+- Stories section now carries a disclaimer under the header: "Illustrative scenarios of the
+  intended flow. The storefront path (research → store-builder → copywriter) runs today; the
+  self-building-tool path is on the roadmap, marked below."
+- The Unity/3D-assets story (entirely unbuilt — no toolsmith, maker, qa, store roles) is tagged
+  **ROADMAP** on its quote (new `.story .quote .mono` badge style).
+- Catalog-note rewritten: the CEO drafting from a **proven role library** (real, `matchPlaybook()`)
+  is stated as today; the **searchable capability catalog** and **colony-built tools** are stated as
+  roadmap. Dropped the `payments` category (no payment integration exists post-Stripe-removal).
 
-**Files:** `dashboard/landing.html` (stories section ~line 773-808).
+**Note:** the shoe story keeps its illustrative agent names (research-1/webmaster-1/connector-1/
+listing-1) — the FLOW is real even though the runtime role names differ; the header disclaimer now
+frames the whole section as illustrative.
+
+**Files:** `dashboard/landing.html` (stories header, story-1 quote, catalog-note, `.mono` badge CSS).
 
 ---
 
@@ -148,11 +170,15 @@ exist — store playbook is research → store-builder → copywriter only.
 |---|------|------|--------------|--------|
 | 1 | Containment default | High | code (done) | ✅ |
 | 2 | Eval-gating | High | code gate (done) | ✅ |
-| 3 | Stripe absent | Med | remove from marquee | 🔴 |
-| 4 | Supervised plan-approval | Med | fix FAQ copy | 🔴 |
-| 5 | Catalog/toolsmith stories | Med | frame as roadmap | 🔴 |
+| 3 | Stripe absent | Med | remove from marquee (done) | ✅ |
+| 4 | Supervised plan-approval | Med | fix FAQ copy (done) | ✅ |
+| 5 | Catalog/toolsmith stories | Med | frame as roadmap (done) | ✅ |
 
 Underneath the copy the engineering is strong (fail-closed gate, brain-pool failover,
 handoff-schema validation, spawn-authority broker, deterministic eval ladder, run-memory).
-The gap is only the marketing layer. Items 2-5 are all ~15-min copy edits if the cheapest
-path is taken; the site then matches the system.
+The gap was only the marketing layer.
+
+**All 5 items closed 2026-07-19** — items 1 & 2 by code (containment AUTO-default + eval hard
+gate), items 3–5 and the residual copy on 1 & 2 by an honest copy pass. Remaining accepted risks
+are documented per-item above (scripted `security gate: connected`, no global dashboard banner,
+eval cache keys needing the exact demo-model slugs laddered). The site now matches the system.

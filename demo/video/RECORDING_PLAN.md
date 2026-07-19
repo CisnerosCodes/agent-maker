@@ -14,12 +14,14 @@ take 2 or 3 — nobody keeps take 1.
    inject poisoned doc → Deny → relaunch same goal for the memory beat. Time
    each phase with your phone. If any phase takes longer than the script's
    voiceover covers, note where you will vamp (see §4).
-3. **Seed run memory, then reset correctly.** The Act 3 speedup needs a
-   prior run in `data/runs.json`. Check whether `reset demo` clears runs.json:
-   if it does, the on-camera Act 1 build IS run one and Act 3 is run two —
-   which works, as long as you use the exact same niche answer both times
-   (memory matches on niche key). Decide your niche answer now and never
-   improvise it: `trending sneakers, 3 products`.
+3. **Reset for a clean slate.** Confirmed: `Reset demo` (the `/reset` route)
+   DOES wipe run memory (`runMemory.clear()` on `data/runs.json`). So the
+   on-camera Act 1 build IS run one and Act 3 is run two — no pre-seeding
+   needed. Just use the exact same niche answer both times (memory matches on
+   niche key). Decide it now and never improvise it: `trending sneakers, 3
+   products`. **Shortcut:** `demo/video/prep-demo.ps1` starts the server, POSTs
+   the reset, and opens the three tabs for you — run it instead of doing §1.1
+   and this step by hand.
 4. Browser prep (use a normal Chrome window, not incognito, so Loom's
    extension works if you use it):
    - Exactly three tabs, in order: intro card, localhost:4000, outro card.
@@ -98,4 +100,4 @@ If the demo is slower than the script, fill with these instead of silence:
 - Whoever has the calmest recorded voice reads. The other person sits
   off-camera with the script, timing phases and hand-signaling "stretch" /
   "move on".
-- Alex owns the submission checklist (link permissions, description, form).
+- Sky owns the submission checklist (link permissions, description, form).
