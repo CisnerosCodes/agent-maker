@@ -9,6 +9,11 @@
 //               findings are deterministically synthesized from real data)
 //   store-build real when SHOPIFY_ADMIN_TOKEN + SHOPIFY_STORE_URL are set
 //   copywriter  real when a brain is available
+//   any other library role (strategist, analyst, product-manager, architect…)
+//               real when a brain is available: a generic gated artifact turn
+//               (runGenericRole) — objective + upstream handoffs in, named
+//               artifact out. A failed brain call (dead key, 402) degrades
+//               THAT task to labeled sim instead of failing the goal.
 //
 // Brain selection: WORKER_BACKEND=api|nvidia|cli overrides; else auto by key.
 
@@ -20,6 +25,8 @@ import { escalations } from "../security/escalations.js";
 import { governance } from "../governance/governance.js";
 import { registry } from "../registry/registry.js";
 import { bus } from "../bus/bus.js";
+import { milestoneFor } from "../roles/library.js";
+import { friendlyError } from "../config/errors.js";
 
 export interface Product { title: string; price: number; image?: string }
 
@@ -117,7 +124,10 @@ export function workerMode(role: string): "real" | "sim" {
   if (role === "research") return "real";
   if (role === "store-builder") return process.env.SHOPIFY_ADMIN_TOKEN && process.env.SHOPIFY_STORE_URL ? "real" : "sim";
   if (role === "copywriter") return resolveBrain() ? "real" : "sim";
-  return "sim";
+  // Every other library role (strategist, analyst, product-manager, architect,
+  // builder, qa-reviewer, keyword-miner…) runs the generic brain-backed
+  // artifact turn when a brain key exists; labeled sim otherwise.
+  return resolveBrain() ? "real" : "sim";
 }
 
 // Gate helper: scan content; flagged -> escalate and await the human. Returns
@@ -195,15 +205,24 @@ export async function runResearch(agent: AgentRecord, task: Task, niche: string,
   if (!ok) throw new Error("ingested data quarantined by security policy");
   onProgress(65);
 
-  let summary: string;
+  let summary: string | null = null;
   const brain = resolveBrain();
   if (brain) {
     const prompt = `You are a retail research analyst. In 3 sentences, summarize the opportunity for a "${niche}" store given these products (title/price): ${products.map((p) => `${p.title} ($${p.price})`).join("; ")}. Be concrete about price band and which 3 products to lead with.`;
     if (!(await gateOrEscalate(agent, prompt, "user_prompt", task.goalId, "Model prompt"))) throw new Error("prompt quarantined");
-    const out = await brain.complete(prompt, { model: modelFor(brain), levelId: "worker", trial: 1, maxTokens: 300 });
-    if (!(await gateOrEscalate(agent, out.text, "model_response", task.goalId, "Model response"))) throw new Error("response quarantined");
-    summary = out.text.trim();
-  } else {
+    try {
+      const out = await brain.complete(prompt, { model: modelFor(brain), levelId: "worker", trial: 1, maxTokens: 300 });
+      if (!(await gateOrEscalate(agent, out.text, "model_response", task.goalId, "Model response"))) throw new Error("response quarantined");
+      summary = out.text.trim();
+    } catch (err: any) {
+      if (/quarantined/.test(String(err?.message))) throw err;
+      // Brain died mid-task (dead key, 402, timeout). The fetch was REAL —
+      // keep the findings, fall back to rule-based synthesis, and say so
+      // instead of failing the goal.
+      bus.post({ threadId: task.goalId, from: agent.id, kind: "status", body: `Model analysis unavailable — ${friendlyError(String(err?.message))} Falling back to rule-based synthesis of the real findings.` });
+    }
+  }
+  if (summary === null) {
     const sorted = [...products].sort((a, b) => a.price - b.price);
     const mid = sorted.slice(Math.floor(sorted.length / 3), Math.floor(sorted.length / 3) + 3);
     summary = `${products.length} products from ${researchSourceLabel()}, $${sorted[0]?.price}–$${sorted[sorted.length - 1]?.price}. Rule-based synthesis (add a model key for LLM analysis). Lead with mid-band: ${mid.map((p) => `${p.title} ($${p.price})`).join(", ")}.`;
@@ -241,11 +260,84 @@ export async function runCopywriter(agent: AgentRecord, task: Task, niche: strin
   onProgress(20);
   const prompt = `Write a punchy one-line product description for each of these ${niche} products (format "Title — description"): ${products.slice(0, 3).map((p) => p.title).join("; ")}`;
   if (!(await gateOrEscalate(agent, prompt, "user_prompt", task.goalId, "Model prompt"))) throw new Error("prompt quarantined");
-  const out = await brain.complete(prompt, { model: modelFor(brain), levelId: "worker", trial: 1, maxTokens: 300 });
-  if (!(await gateOrEscalate(agent, out.text, "model_response", task.goalId, "Model response"))) throw new Error("response quarantined");
+  try {
+    const out = await brain.complete(prompt, { model: modelFor(brain), levelId: "worker", trial: 1, maxTokens: 300 });
+    if (!(await gateOrEscalate(agent, out.text, "model_response", task.goalId, "Model response"))) throw new Error("response quarantined");
+    onProgress(90);
+    bus.post({ threadId: task.goalId, from: agent.id, kind: "finding", body: `Copy delivered:\n${out.text.trim().slice(0, 500)}` });
+    return out.text.trim();
+  } catch (err: any) {
+    if (/quarantined/.test(String(err?.message))) throw err;
+    // Dead key must cost one artifact's realism, not the goal. Degrade to
+    // LABELED simulation with the honest reason.
+    task.mode = "sim";
+    bus.post({ threadId: task.goalId, from: agent.id, kind: "status", body: `Model call unavailable — ${friendlyError(String(err?.message))} Completing this task as LABELED SIMULATION; it flips real once a working key is connected.` });
+    registry.upsert(agent, `Brain unavailable — copy degraded to labeled sim`);
+    onProgress(90);
+    const staged = `Copy delivered for ${Math.min(products.length, 3) || 3} products plus homepage hero. (staged — connect a working model key in BUSINESS SETUP for real copy)`;
+    bus.post({ threadId: task.goalId, from: agent.id, kind: "finding", body: staged });
+    return staged;
+  }
+}
+
+// Generic library-role turn — the real path for every role without a bespoke
+// implementation above. Upstream handoff artifacts go in as named sections
+// (MetaGPT SOP-style), the role's named artifact comes out; prompt and
+// response both pass the gate. A failed BRAIN call (dead key, 402, timeout)
+// degrades this one task to labeled sim — quarantines still fail the task.
+export interface UpstreamArtifact { role: string; handoff?: string; output: string }
+
+export async function runGenericRole(
+  agent: AgentRecord,
+  task: Task,
+  niche: string,
+  upstream: UpstreamArtifact[],
+  onProgress: (p: number) => void,
+): Promise<string> {
+  onProgress(10);
+  const artifact = agent.spec.handoff ?? "deliverable";
+  const sections = upstream
+    .filter((u) => u.output)
+    .map((u) => `## Handoff from ${u.role}${u.handoff ? ` — ${u.handoff}` : ""}\n${u.output.slice(0, 1800)}`)
+    .join("\n\n");
+  const prompt = [
+    `You are the ${agent.spec.role} in a small agent company. Your objective: ${agent.spec.objective}`,
+    `Market/niche context: ${niche}.`,
+    sections,
+    `Deliver your ${artifact} now. Be concrete and complete — no placeholder text, no preamble. If anything essential is unknown, end with a short ANYTHING_UNCLEAR list; otherwise omit it.`,
+  ].filter(Boolean).join("\n\n");
+
+  if (!(await gateOrEscalate(agent, prompt, "user_prompt", task.goalId, "Model prompt"))) throw new Error("prompt quarantined");
+  onProgress(30);
+
+  const brain = resolveBrain();
+  let text: string | null = null;
+  let failNote = "no model key connected";
+  if (brain) {
+    try {
+      const out = await brain.complete(prompt, { model: modelFor(brain), levelId: "worker", trial: 1, maxTokens: 700 });
+      text = out.text.trim();
+    } catch (err: any) {
+      failNote = friendlyError(err.message);
+    }
+  }
+
+  if (text !== null) {
+    if (!(await gateOrEscalate(agent, text, "model_response", task.goalId, "Model response"))) throw new Error("response quarantined");
+    onProgress(90);
+    bus.post({ threadId: task.goalId, from: agent.id, kind: "finding", body: `${artifact} delivered (${brain!.name}):\n${text.slice(0, 600)}` });
+    return text;
+  }
+
+  // Honest degrade: the brain died mid-task. Complete as LABELED simulation so
+  // one dead key costs one artifact's realism, not the whole goal.
+  task.mode = "sim";
+  const staged = milestoneFor(agent.spec.role, niche)?.done ?? `Done: ${task.title}`;
+  bus.post({ threadId: task.goalId, from: agent.id, kind: "status", body: `Model call unavailable (${failNote}) — completing this task as LABELED SIMULATION. It flips real automatically once a working model key is connected in BUSINESS SETUP.` });
+  registry.upsert(agent, `Brain unavailable — task degraded to labeled sim: ${failNote.slice(0, 80)}`);
   onProgress(90);
-  bus.post({ threadId: task.goalId, from: agent.id, kind: "finding", body: `Copy delivered:\n${out.text.trim().slice(0, 500)}` });
-  return out.text.trim();
+  bus.post({ threadId: task.goalId, from: agent.id, kind: "finding", body: staged });
+  return staged;
 }
 
 function modelFor(brain: ModelBackend): string {
