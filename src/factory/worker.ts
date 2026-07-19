@@ -20,7 +20,7 @@ import { escalations } from "../security/escalations.js";
 import { governance } from "../governance/governance.js";
 import { registry } from "../registry/registry.js";
 import { bus } from "../bus/bus.js";
-import { executionClassOf, type OutputSchema, type PlanContext, type RoleTemplate } from "../roles/library.js";
+import { executionClassOf, type OutputSchema, type PlanContext, type RoleTemplate, renderUpstream } from "../roles/library.js";
 
 export interface Product { title: string; price: number; image?: string }
 
@@ -113,19 +113,10 @@ export function resolveBrain(): ModelBackend | null {
   return null;
 }
 
-// Roles the CURRENT orchestrator work-loop (runReal) can dispatch directly.
-// The generic executor (executeRole) already runs EVERY pure-LLM role for real,
-// but until runReal is wired to call it (follow-up — see PR notes), returning
-// "real" for strategist/analyst would make them run with no visible output.
-// Keeping them on the labeled sim path until then avoids a live regression while
-// the capability + data (execution class, promptFor, outputSchema) ship now.
-const ORCHESTRATOR_WIRED_REAL = new Set(["research", "store-builder", "copywriter"]);
-
 // Mode is now derived from the role's execution class (worker-capability §1),
 // not a hardcoded role list — a new pure-LLM role needs only a library entry.
 export function workerMode(role: string): "real" | "sim" {
   if (process.env.SIM_MODE === "1") return "sim";
-  if (!ORCHESTRATOR_WIRED_REAL.has(role)) return "sim"; // ghost roles: sim until runReal calls executeRole
   switch (executionClassOf(role)) {
     case "broker-ingest":
       return "real";

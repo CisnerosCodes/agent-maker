@@ -13,13 +13,13 @@ import { registry } from "../registry/registry.js";
 import { createAgent, endAgentSession, terminateAgent } from "../factory/factory.js";
 import { clearRevocations } from "../vault/vault.js";
 import { validateSpawn, type SpawnDecision } from "../security/spawn-authority.js";
-import { workerMode, runResearch, runStoreBuilder, runCopywriter, gateOrEscalate, type Product } from "../factory/worker.js";
+import { workerMode, executeRole, gateOrEscalate, type Product } from "../factory/worker.js";
 import { escalations } from "../security/escalations.js";
 import { runMemory, type RunRecord } from "../memory/runs.js";
 import { missingFor } from "../config/env.js";
 import { companyProfile, clearCompanyProfile } from "../config/company.js";
 import { friendlyError } from "../config/errors.js";
-import { matchPlaybook } from "../roles/library.js";
+import { matchPlaybook, roleTemplateFor, type PlanContext, renderUpstream } from "../roles/library.js";
 
 const CEO_ID = "ceo-01";
 const TICK_MS = 1200;
@@ -445,26 +445,15 @@ class Orchestrator extends EventEmitter {
     const onProgress = (p: number) => { task.progress = Math.max(task.progress, Math.min(99, p)); this.emitTask(task); };
     try {
       const niche = this.niche.get(task.goalId) ?? "the target market";
-      if (agent.spec.role === "research") {
-        const prior = this.recalled.get(task.goalId);
-        let products: Product[];
-        if (prior) {
-          // Reuse path: cite prior run, no re-scrape. This is the speedup.
-          products = prior.products;
-          onProgress(60);
-          bus.post({ threadId: task.goalId, from: agent.id, kind: "finding", body: `Reusing ${products.length} products from ${prior.runId} — no re-scrape needed. Prior lead picks still valid.` });
-        } else {
-          products = await runResearch(agent, task, niche, onProgress);
-        }
-        this.research.set(task.goalId, products);
-        task.outputData = products;
-        task.output = prior ? `${products.length} products (reused ${prior.runId})` : `${products.length} products`;
-      } else if (agent.spec.role === "store-builder") {
-        const url = await runStoreBuilder(agent, task, this.research.get(task.goalId) ?? [], onProgress);
-        task.output = url;
-      } else if (agent.spec.role === "copywriter") {
-        task.output = await runCopywriter(agent, task, niche, this.research.get(task.goalId) ?? [], onProgress);
-      }
+      const tmpl = roleTemplateFor(agent.spec.role);
+      if (!tmpl) throw new Error(`No role template for ${agent.spec.role}`);
+      const ctx: PlanContext = { goalText: this.goals.get(task.goalId)?.text ?? "", niche, idSuffix: task.goalId.slice(5) };
+      const upstream = task.dependsOn.length > 0
+        ? this.tasks.get(task.dependsOn[0])?.outputData ?? null
+        : null;
+      const output = await executeRole(agent, task, tmpl, ctx, upstream, onProgress);
+      task.outputData = output;
+      task.output = typeof output === "string" ? output : JSON.stringify(output).slice(0, 200);
       this.completeTask(task, agent, "done");
     } catch (err: any) {
       task.status = "failed";
