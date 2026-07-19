@@ -106,8 +106,9 @@ export function resolveBrain(): ModelBackend | null {
 }
 
 export function workerMode(role: string): "real" | "sim" {
-  if (simForced()) return "sim"; // COMPANY_MODE=demo or legacy SIM_MODE=1
-  if (role === "research") return "real";
+  if (process.env.SIM_MODE === "1") return "sim"; // offline stage insurance — EVERYTHING sim
+  if (role === "research") return "real"; // real keyless fetch, honestly labeled — even in demo mode
+  if (simForced()) return "sim"; // COMPANY_MODE=demo: no key spend, no business writes
   if (role === "store-builder") return process.env.SHOPIFY_ADMIN_TOKEN && process.env.SHOPIFY_STORE_URL ? "real" : "sim";
   if (role === "copywriter") return resolveBrain() ? "real" : "sim";
   // Every other library role (strategist, analyst, product-manager, architect,

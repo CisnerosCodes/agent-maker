@@ -103,6 +103,16 @@ exact backend+model is demo-safe.
 > key (Featherless hackathon tokens, Anthropic, or NVIDIA) flips ALL of them
 > real at once; a key dying mid-run degrades that task to labeled sim instead
 > of failing the goal (same for research's LLM analysis and the copywriter).
+>
+> **Company mode** (`COMPANY_MODE=demo|real`, or the switch on `/setup`) makes
+> the demo/real split explicit. DEMO: no key spend, no business writes;
+> research still fetches real data, everything else is labeled sim. REAL:
+> goals are refused until a model key actually works. Unset = auto by keys.
+> Model calls go through the **brain pool** (`src/providers/pool.ts`): every
+> configured key in priority order with health tracking — a 402/401/timeout
+> cools that provider down and the same call fails over to the next brain.
+> Adding a provider = one entry in `BRAIN_PROVIDERS` + an `INTEGRATIONS` row
+> + a doctor probe. `/api/providers` shows live pool health.
 
 The code paths are built and default to sim when a dependency is missing. Add
 the key/box and the dashboard label flips REAL automatically — no code change.

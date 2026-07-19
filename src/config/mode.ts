@@ -31,13 +31,19 @@ export interface ModeStatus {
 }
 
 export function companyMode(): CompanyMode {
+  // SIM_MODE=1 is stage insurance and ALWAYS wins — a REAL badge over
+  // force-simmed workers would be a lie.
+  if (process.env.SIM_MODE === "1") return "demo";
   const env = (process.env.COMPANY_MODE ?? "").trim().toLowerCase();
   if (env === "demo" || env === "real") return env;
-  if (process.env.SIM_MODE === "1") return "demo";
   return configuredBrains().length > 0 ? "real" : "demo";
 }
 
-// True when every worker must run as labeled simulation.
+// True when brain calls and business writes must stay off (demo mode).
+// NOTE: this does NOT force the keyless research fetch to sim — demo mode
+// still does the real HTTP fetch with its source honestly labeled. Only
+// SIM_MODE=1 (fully offline stage insurance) sims everything; workerMode
+// checks that flag separately.
 export function simForced(): boolean {
   return companyMode() === "demo";
 }
@@ -45,7 +51,7 @@ export function simForced(): boolean {
 export function modeStatus(): ModeStatus {
   const env = (process.env.COMPANY_MODE ?? "").trim().toLowerCase();
   const source: ModeStatus["source"] =
-    env === "demo" || env === "real" ? "env" : process.env.SIM_MODE === "1" ? "sim-mode" : "auto";
+    process.env.SIM_MODE === "1" ? "sim-mode" : env === "demo" || env === "real" ? "env" : "auto";
   const mode = companyMode();
   const brains = configuredBrains().map((b) => b.id);
   const { pin, provider } = pinnedBrain();
@@ -55,10 +61,10 @@ export function modeStatus(): ModeStatus {
       mode, source, ready: true, brains,
       reason:
         source === "env"
-          ? "DEMO mode (set by you) — every agent runs as labeled simulation; no keys are used."
+          ? "DEMO mode (set by you) — no keys are used and nothing touches your business systems. Research still fetches real data (source labeled); everything else runs as labeled simulation."
           : source === "sim-mode"
-            ? "DEMO mode (SIM_MODE=1) — every agent runs as labeled simulation; no keys are used."
-            : "DEMO mode — no model key connected yet. Everything runs as labeled simulation; connect a key in Connections to go real.",
+            ? "DEMO mode (SIM_MODE=1, fully offline) — every agent runs as labeled simulation, including research."
+            : "DEMO mode — no model key connected yet. Research fetches real data (source labeled); everything else runs as labeled simulation. Connect a key in Connections to go real.",
     };
   }
 
