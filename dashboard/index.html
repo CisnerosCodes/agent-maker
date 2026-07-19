@@ -156,6 +156,8 @@
     .st.failed, .st.terminated { color: var(--red); } .st.failed i, .st.terminated i { background: var(--red); }
     .aname { font-weight: 600; }
     .aname .ceo-tag { font-family: var(--font-mono); font-size: 0.62rem; color: var(--honey); margin-left: 0.4rem; letter-spacing: 0.06em; }
+    .aname .uncontained-badge { display: inline-block; margin-left: 0.4rem; padding: 0.1rem 0.5rem; font-family: var(--font-mono); font-size: 0.58rem; font-weight: 700; letter-spacing: 0.06em; background: var(--red); color: #fff; border-radius: 999px; text-transform: uppercase; box-shadow: 0 0 0 2px var(--red-soft); }
+    .aname .contained-badge { display: inline-block; margin-left: 0.4rem; padding: 0.1rem 0.5rem; font-family: var(--font-mono); font-size: 0.58rem; font-weight: 700; letter-spacing: 0.06em; background: var(--green); color: #fff; border-radius: 999px; text-transform: uppercase; box-shadow: 0 0 0 2px var(--green-soft); }
     .arole { font-size: 0.72rem; color: var(--ink-mute); margin-top: 0.1rem; }
     .ttitle { color: var(--ink-dim); max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .tbar { height: 4px; border-radius: 3px; background: #efede7; overflow: hidden; margin-top: 0.4rem; max-width: 220px; }
@@ -655,7 +657,7 @@
           <tr onclick="openDrawer('${esc(a.id)}')">
             <td class="st ${esc(a.status)}"><i></i>${esc(a.status)}</td>
             <td>
-              <div class="aname">${esc(a.id)}${isCeo ? '<span class="ceo-tag">CEO</span>' : ""}</div>
+              <div class="aname">${esc(a.id)}${isCeo ? '<span class="ceo-tag">CEO</span>' : ""}${a.containment === "local" ? '<span class="uncontained-badge">UNCONTAINED</span>' : a.containment === "nemoclaw" ? '<span class="contained-badge">CONTAINED</span>' : ""}</div>
               <div class="arole">${esc(a.spec?.role ?? "")}${a.identity?.email ? " · " + esc(a.identity.email) : ""}</div>
             </td>
             <td>
