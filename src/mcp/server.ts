@@ -51,11 +51,12 @@ async function api(path: string, init?: { method?: string; body?: unknown }): Pr
 const EXPLAIN: Record<string, string> = {
   overview: `Agent-Maker is a self-expanding agent company in a box. You give the CEO agent a
 business goal ("launch a Shopify store for trending shoes"). The CEO decomposes it into roles,
-and the Factory provisions each worker: a scoped identity from the Vault, an OpenShell sandbox
-policy it cannot escape, and a NemoClaw worker process. Every model input/output, tool call,
-and ingested document passes a SecurityGate (heuristic floor always on; HiddenLayer runtime
-security when connected). You watch it all on the live dashboard — org chart, per-agent
-progress, the agents talking to each other — and approve anything risky.
+and the Factory provisions each worker: a scoped identity from the Vault, a rendered OpenShell
+sandbox policy, and — when WORKER_MODE=nemoclaw with a live NemoClaw runtime — a contained
+worker process (local runs are honestly labeled UNCONTAINED on the dashboard). Every model
+input/output, tool call, and ingested document passes a SecurityGate (heuristic floor always
+on; HiddenLayer runtime security when connected). You watch it all on the live dashboard —
+org chart, per-agent progress, the agents talking to each other — and approve anything risky.
 
 Two ways to drive it: the dashboard chat, or right here through your own agent via MCP.
 Both talk to the same live company.`,
@@ -65,15 +66,17 @@ Both talk to the same live company.`,
    floor is always on; connect HiddenLayer for authoritative scanning. Detections route by
    policy: log, block, or escalate to a human approve/deny banner.
 2. OpenShell sandbox policies — each worker gets a role-scoped YAML policy (allowed hosts,
-   commands, files). Even if a poisoned document is APPROVED, the egress policy independently
-   blocks exfiltration hosts.
+   commands, files). When the worker runs contained (WORKER_MODE=nemoclaw + live NemoClaw),
+   the egress policy independently blocks exfiltration hosts even if a poisoned document is
+   APPROVED. Local (UNCONTAINED) runs say so on the dashboard instead of claiming this backstop.
 3. Spawn authority + escalations — workers can't spawn workers without authority, and
    anything flagged goes blocked until a human resolves it (dashboard banner, or the
    resolve_approval tool here at the user's explicit request).
 Try run_security_demo to watch the whole chain fire on a real poisoned document.`,
 
   "setup-chain": `Business setup is priority-ordered so each credential helps set up the next:
-1. Resend — agents get working email identities; the root every later signup hangs off.
+1. Resend — agents get named email identities (vault-issued handles today; real outbound
+   send is wired next, once a domain is verified).
 2. A brain (Claude OR NVIDIA Nemotron key) — real AI output from copywriter/strategist/analyst.
 3. Shopify — the deliverable turns real: products created in YOUR store.
 4. Apify — research scrapes live products instead of a labeled sample catalog.
@@ -92,8 +95,8 @@ never through this MCP connection, so no model ever sees a raw secret.`,
   labeled SIMULATION. Nemotron inference: REAL with an NVIDIA key + WORKER_BACKEND=nvidia.`,
 
   architecture: `You (chat/Slack/this MCP) -> CEO (heartbeat, persistent memory) -> Factory
-(spec -> identity -> OpenShell policy -> NemoClaw spawn) -> workers on a persisted message
-bus. The bus is the company's spine: one choke point where the SecurityGate scans every
+(spec -> identity -> OpenShell policy -> NemoClaw spawn when contained, labeled UNCONTAINED
+local execution otherwise) -> workers on a persisted message bus. The bus is the company's spine: one choke point where the SecurityGate scans every
 inter-agent message, replayable, demoable offline. The dashboard is an SSE view over it;
 this MCP server is a JSON view over the same state. Evals: a 20-level Instruction-Following
 Ladder benchmarks which model+backend is safe to give a worker (see latest_eval_report).`,

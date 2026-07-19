@@ -13,7 +13,7 @@ import { registry } from "../registry/registry.js";
 import { createAgent, endAgentSession, terminateAgent } from "../factory/factory.js";
 import { clearRevocations } from "../vault/vault.js";
 import { validateSpawn, type SpawnDecision } from "../security/spawn-authority.js";
-import { workerMode, runResearch, runStoreBuilder, runCopywriter, runGenericRole, gateOrEscalate, type Product } from "../factory/worker.js";
+import { workerMode, resolveBrain, runResearch, runStoreBuilder, runCopywriter, runGenericRole, gateOrEscalate, type Product } from "../factory/worker.js";
 import { escalations } from "../security/escalations.js";
 import { runMemory, type RunRecord } from "../memory/runs.js";
 import { missingFor } from "../config/env.js";
@@ -89,12 +89,19 @@ export class Orchestrator extends EventEmitter {
     const wasStatus = agent.status;
     bus.post({ threadId, from: "external-source", to: agent.id, kind: "finding", body: `Ingested document from research source: ${payload}` });
     // Fire and forget: the decision continuation runs when the human clicks.
+    // Honest layer-2 claim: the OpenShell egress backstop only exists when this
+    // agent actually runs in a NemoClaw sandbox. UNCONTAINED runs say so.
+    const contained = agent.containment === "nemoclaw";
     gateOrEscalate(agent, payload, "ingested_document", threadId, "Poisoned document from external research source")
       .then((allowed) => {
         if (allowed) {
-          bus.post({ threadId, from: agent.id, kind: "status", body: "Operator approved the ingested document — proceeding (note: OpenShell egress policy still blocks the exfil host independently)." });
+          bus.post({ threadId, from: agent.id, kind: "status", body: contained
+            ? "Operator approved the ingested document — proceeding (note: OpenShell egress policy still blocks the exfil host independently)."
+            : "Operator approved the ingested document — proceeding. (This run is UNCONTAINED — no OpenShell egress backstop; set WORKER_MODE=nemoclaw for layer-2 containment.)" });
         } else {
-          bus.post({ threadId, from: agent.id, kind: "system", body: "Poisoned document quarantined. Defense in depth: even if approved, the OpenShell policy denies the evil.example egress host." });
+          bus.post({ threadId, from: agent.id, kind: "system", body: contained
+            ? "Poisoned document quarantined. Defense in depth: even if approved, the OpenShell policy denies the evil.example egress host."
+            : "Poisoned document quarantined by the operator (layer 1). Layer-2 note: this run is UNCONTAINED — set WORKER_MODE=nemoclaw for the independent OpenShell egress block." });
         }
         // Either way the demo attack is OVER — the agent goes back to what it
         // was doing. Leaving it "blocked" after a deny left zombie rows with
@@ -195,10 +202,26 @@ export class Orchestrator extends EventEmitter {
     // Direct message to a worker: acknowledge and fold into its work.
     if (m.to && m.to !== CEO_ID && registry.get(m.to)) {
       const agent = registry.get(m.to)!;
-      setTimeout(() => {
-        bus.post({ threadId: m.threadId, from: agent.id, to: "user", kind: "chat", body: `Noted — factoring "${m.body}" into my current task.` });
-        registry.upsert(agent, `User note received: ${m.body.slice(0, 60)}`);
-      }, 900);
+      registry.upsert(agent, `User note received: ${m.body.slice(0, 60)}`);
+      const brain = resolveBrain();
+      if (brain) {
+        // Real reply: a small gated model turn in the agent's voice. Failure
+        // degrades to the honest acknowledgment below — never a fake chat line.
+        const task = [...this.tasks.values()].find((t) => t.agentId === agent.id);
+        const prompt = `You are ${agent.id}, the ${agent.spec.role} in a small agent company${task ? `, currently working on "${task.title}"` : ""}. The human operator just told you: "${m.body}". Reply in ONE short sentence: acknowledge and say concretely how it affects your work.`;
+        try {
+          const out = await brain.complete(prompt, { model: "", levelId: "chat", trial: 1, maxTokens: 80 });
+          const reply = out.text.trim();
+          if (reply && (await gateOrEscalate(agent, reply, "model_response", m.threadId, "Chat reply"))) {
+            bus.post({ threadId: m.threadId, from: agent.id, to: "user", kind: "chat", body: reply });
+            return;
+          }
+        } catch { /* fall through to the honest acknowledgment */ }
+      }
+      bus.post({
+        threadId: m.threadId, from: agent.id, to: "user", kind: "status",
+        body: `Note logged to my task context. (auto-acknowledgment — connect a model key for a real reply)`,
+      });
       return;
     }
 
@@ -719,19 +742,22 @@ export class Orchestrator extends EventEmitter {
       .filter(Boolean);
     const found = this.research.get(task.goalId)?.length ?? 0;
     const built = Math.min(found || 3, 3);
+    // SIM-ONLY chatter (advance() never runs for real tasks). Every line says
+    // so — a fabricated "finding" with no sim marker is a lie with a green
+    // badge next to it. No invented statistics.
     switch (agent.spec.role) {
       case "research":
         return phase === "mid"
-          ? "Signal so far: product clusters trending up 30d; margins look best in the mid-price band. Full shortlist coming."
-          : `Research complete — ${found || "a shortlist of"} products with prices, images and positioning posted to this thread${peers.length ? ` for ${peers.join(" & ")}` : ""}.`;
+          ? "Scanning the niche catalog and clustering candidates — shortlist forming. (simulated)"
+          : `Research complete — a ${found || 3}-product shortlist with prices and positioning${peers.length ? `, handed to ${peers.join(" & ")}` : ""}. (simulated)`;
       case "store-builder":
         return phase === "mid"
-          ? `${Math.max(built - 1, 1)}/${built} products created; wiring images and variants now. Collections: 0 (real builder creates products only).`
+          ? `${Math.max(built - 1, 1)}/${built} products staged; images and variants next. (simulated)`
           : `Store populated: ${built} products, 0 collections, theme configured. Preview: https://agentcorp-dev.myshopify.com (simulated — connect Shopify in BUSINESS SETUP for a real build)`;
       case "copywriter":
         return phase === "mid"
-          ? `Brand voice locked; descriptions in progress for ${found || built} products.`
-          : `Copy delivered for ${found || built} products plus homepage hero.`;
+          ? `Brand voice locked; descriptions in progress for ${found || built} products. (simulated)`
+          : `Copy delivered for ${found || built} products plus homepage hero. (simulated — connect a model key for real copy)`;
       default: {
         // Library roles (software-shipping, seo, support, fact-check…) declare
         // their own sim-mode milestone copy; generic line only if none exists.

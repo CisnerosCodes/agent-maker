@@ -61,13 +61,13 @@ export const INTEGRATIONS: Integration[] = [
   {
     id: "resend",
     label: "Agent email identities (Resend)",
-    unlocks: "Each hired agent gets a working company email address — the root identity later setups build on.",
+    unlocks: "Each hired agent gets a named company email identity — the root identity later setups build on. (Identity handle today; real outbound send is wired next, once your domain is verified.)",
     link: "https://resend.com/api-keys",
     hint: "Create a free account, add an API key. Connect your domain later for branded addresses.",
     keys: ["RESEND_API_KEY"],
     roles: [],
     priority: 1,
-    provisioning: "Once connected, agents mint their own addresses automatically; verification emails for other services can land in agent inboxes.",
+    provisioning: "Agents mint their own addresses automatically. Roadmap: outbound send via Resend once a domain is verified; inbound routing so verification emails can land in agent inboxes.",
   },
   {
     id: "brain-anthropic",
