@@ -15,6 +15,7 @@ import { clearRevocations } from "../vault/vault.js";
 import { validateSpawn, type SpawnDecision } from "../security/spawn-authority.js";
 import { workerMode, resolveBrain, runResearch, runStoreBuilder, runCopywriter, runGenericRole, gateOrEscalate, type Product } from "../factory/worker.js";
 import { escalations } from "../security/escalations.js";
+import { policyTightener } from "../security/tightening.js";
 import { runMemory, type RunRecord } from "../memory/runs.js";
 import { missingFor } from "../config/env.js";
 import { companyProfile, clearCompanyProfile } from "../config/company.js";
@@ -25,6 +26,16 @@ import { nicheFor } from "../config/niche.js";
 
 const CEO_ID = "ceo-01";
 const TICK_MS = 1200;
+
+// Pull egress hosts out of a poisoned payload so the tightening loop has a
+// concrete deny target. Case-normalized + deduped; strips any path/port-less host
+// from a URL. No URL → no host → tightening is a no-op (never invents a target).
+function extractHosts(text: string): string[] {
+  const set = new Set<string>();
+  for (const m of text.matchAll(/https?:\/\/([^/\s"'<>]+)/gi)) set.add(m[1].toLowerCase());
+  return [...set];
+}
+
 // CEO heartbeat: slower, separate clock that stays alive while ANY goal is active
 // (not just active tasks). Reacts to blocked/failed/done transitions.
 const HEARTBEAT_MS = 5000;
@@ -105,6 +116,11 @@ export class Orchestrator extends EventEmitter {
           bus.post({ threadId, from: agent.id, kind: "system", body: contained
             ? "Poisoned document quarantined at layer 1 (SecurityGate auto-block, or operator deny — see the gate line above). Defense in depth: even if approved, the OpenShell policy denies the evil.example egress host."
             : "Poisoned document quarantined at layer 1 (SecurityGate auto-block, or operator deny — see the gate line above). Layer-2 note: this run is UNCONTAINED — set WORKER_MODE=nemoclaw for the independent OpenShell egress block." });
+          // The flag just fired — promote it from a one-off block into the HARD
+          // boundary. §6-safe: this runs ONLY on the out-of-band attack path,
+          // never inside the timed store-launch, so it can't confound the
+          // run-memory speed delta.
+          void this.tightenFromAttack(agent, payload, threadId);
         }
         // Either way the demo attack is OVER — the agent goes back to what it
         // was doing. Leaving it "blocked" after a deny left zombie rows with
@@ -116,6 +132,56 @@ export class Orchestrator extends EventEmitter {
       })
       .catch((err) => console.error(`[attack] ${err.message}`));
     return { ok: true, agentId: agent.id };
+  }
+
+  // Promote a flagged attack into the hard OpenShell boundary — "the sandbox got
+  // tighter because it learned." Mode-gated to MIRROR hiring approval: assisted
+  // (governance.planGate, where org plans wait for the operator) asks before
+  // tightening via the same escalation approve/deny banner; supervised and
+  // autonomous tighten automatically. Enforcement is honest: a real hard deny
+  // only lands on a contained (NemoClaw) box; UNCONTAINED records the provenance
+  // row without enforcing, and says so. Never throws into the attack flow.
+  private async tightenFromAttack(agent: AgentRecord, payload: string, threadId: string): Promise<void> {
+    const hosts = extractHosts(payload);
+    if (hosts.length === 0) return;
+    const role = agent.spec.role;
+    const contained = agent.containment === "nemoclaw";
+
+    const apply = async () => {
+      const out = await policyTightener.run({
+        role,
+        deniedEgress: hosts,
+        scans: [{ categories: ["data_exfiltration"] }],
+      });
+      if (out.applied.length) {
+        bus.post({ threadId, from: agent.id, kind: "system",
+          body: `Boundary tightened: added a hard deny for ${out.applied.map((r) => r.target).join(", ")} to ${role}'s OpenShell policy. The worker can no longer reach it even if a future prompt tells it to — see the tightening history in this agent's drawer.` });
+      } else if (!contained) {
+        bus.post({ threadId, from: agent.id, kind: "system",
+          body: `Tightening recorded for ${hosts.join(", ")} (deny ${role}) but NOT enforced: this run is UNCONTAINED — there's no OpenShell gateway to load the rule. On a NemoClaw box this becomes a hard deny. The provenance row is in the agent's drawer.` });
+      } else {
+        bus.post({ threadId, from: agent.id, kind: "system",
+          body: `Tightening for ${hosts.join(", ")} did not apply — the policy update failed or the target collides with ${role}'s own required allowlist (escalated for review). See the agent's drawer.` });
+      }
+    };
+
+    if (governance.planGate()) {
+      // assisted: hiring waits for the operator, so tightening does too — same
+      // approve/deny banner, its own escalation id (no collision with the attack).
+      const { decision } = escalations.create(
+        agent.id,
+        `Tighten boundary — add a hard deny for ${hosts.join(", ")} to ${role}'s OpenShell policy?`,
+        { verdict: "flagged", categories: ["policy_tightening_request"], raw: null } as any,
+        payload,
+      );
+      decision.then((verdict) => {
+        if (verdict === "approved") return apply();
+        bus.post({ threadId, from: agent.id, kind: "system",
+          body: `Operator declined to tighten the boundary for ${hosts.join(", ")}. Left as the base policy.` });
+      }).catch((err) => console.error(`[tighten] ${err.message}`));
+    } else {
+      await apply().catch((err) => console.error(`[tighten] ${err.message}`));
+    }
   }
 
   private ensureCeo() {

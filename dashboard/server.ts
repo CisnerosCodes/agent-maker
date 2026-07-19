@@ -19,6 +19,7 @@ import { brainPoolStatus, resetHealthForKey } from "../src/providers/pool.js";
 import { modeStatus } from "../src/config/mode.js";
 import { companyProfile, saveCompanyProfile, suggestedFirstGoal, STARTER_PACKS } from "../src/config/company.js";
 import { readLog } from "../src/security/tightening-log.js";
+import { nemoclawEvents } from "../src/worker/nemoclaw.js";
 
 const PORT = Number(process.env.DASHBOARD_PORT ?? 4000);
 const EVALS_DIR = process.env.EVALS_DIR ?? "./data/evals";
@@ -40,6 +41,9 @@ orchestrator.on("run", (run) => broadcast("run", run));
 orchestrator.on("planApproval", (p) => broadcast("planApproval", p));
 escalations.on("escalation", (esc) => broadcast("escalation", esc));
 governance.on("change", (mode) => broadcast("autonomy", { mode }));
+// Policy-tightening loop landed a learned deny rule — push it live so the agent
+// drawer's policy view updates without a refresh (the "gets safer" moment).
+nemoclawEvents.on("tightening", (evt) => broadcast("tightening", evt));
 
 // SecurityGate on the bus: a passive "gate is watching" signal on inter-agent
 // traffic. HEURISTICS ONLY here (C3) — the authoritative HiddenLayer scan runs

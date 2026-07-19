@@ -841,7 +841,7 @@
       if (openAgentId !== agentId) return; // drawer switched while we were fetching
       const rows = p.tightening ?? [];
       const hist = rows.length
-        ? rows.map(r => `<div>${esc((r.ts || "").slice(0, 19).replace("T", " "))} <b>${r.applied ? "+ " : "(escalated) "}${esc(r.direction)} ${esc(r.target)}</b><span class="d"> · ${esc(r.detector)}${r.revision != null ? " · rev " + esc(r.revision) : ""}</span></div>`).join("")
+        ? rows.map(r => `<div>${esc((r.ts || "").slice(0, 19).replace("T", " "))} <b>${esc(r.direction)} ${esc(r.target)}</b> ${r.applied ? "<span class=\"mode real\">APPLIED</span>" : '<span class="d">recorded · not enforced</span>'}<span class="d"> · ${esc(r.detector)}${r.revision != null ? " · rev " + esc(r.revision) : ""}</span></div>`).join("")
         : '<div class="d">no learned rules yet — the boundary is the base policy above</div>';
       el.innerHTML =
         `<div class="stat-line">${esc(p.file || "no policy file for this role")} · ${rows.length} tightening row(s)</div>`
@@ -1173,6 +1173,13 @@
       else if (type === "escalation") state.escalations.set(data.id, data);
       else if (type === "run") state.runs.push(data);
       else if (type === "autonomy") state.autonomyMode = data.mode;
+      else if (type === "tightening") {
+        // A learned deny rule just landed. Refresh the open worker drawer's policy
+        // view and toast it — the "gets safer" moment, live.
+        if (data.applied?.length) toast(`Boundary tightened: deny ${data.applied.join(", ")} (${data.role}).`, "ok");
+        const a = openAgentId && state.agents.get(openAgentId);
+        if (a && a.spec?.role === data.role) loadPolicy(data.role, openAgentId);
+      }
       else if (type === "mode") renderCompanyMode(data);
       else if (type === "setup") { setupState = data; renderSetup(); }
       else if (type === "planApproval") {
