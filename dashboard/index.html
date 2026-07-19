@@ -159,6 +159,14 @@
     .st.failed, .st.terminated { color: var(--red); } .st.failed i, .st.terminated i { background: var(--red); }
     .aname { font-weight: 600; }
     .aname .ceo-tag { font-family: var(--font-mono); font-size: 0.62rem; color: var(--honey); margin-left: 0.4rem; letter-spacing: 0.06em; }
+    .aname .containment-badge {
+      font-family: var(--font-mono); font-size: 0.58rem; font-weight: 700; letter-spacing: 0.05em;
+      padding: 0.1rem 0.4rem; border-radius: 999px; margin-left: 0.4rem; vertical-align: middle;
+      background: var(--red-soft); color: var(--red); border: 1px solid var(--red);
+    }
+    .aname .containment-badge.contained {
+      background: var(--green-soft); color: var(--green); border-color: var(--green);
+    }
     .arole { font-size: 0.72rem; color: var(--ink-mute); margin-top: 0.1rem; }
     .ttitle { color: var(--ink-dim); max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .tbar { height: 4px; border-radius: 3px; background: #281f44; overflow: hidden; margin-top: 0.4rem; max-width: 220px; }
@@ -655,11 +663,16 @@
         const isCeo = a.spec?.role === "ceo";
         const mode = t?.mode ? (t.mode === "sim"
           ? `<span class="mode-sim">SIM</span>` : `<span class="mode-real">REAL</span>`) : "";
+        const containmentBadge = a.containment === "local"
+          ? `<span class="containment-badge">UNCONTAINED</span>`
+          : a.containment === "nemoclaw"
+            ? `<span class="containment-badge contained">CONTAINED</span>`
+            : "";
         rows.push(`
           <tr onclick="openDrawer('${esc(a.id)}')">
             <td class="st ${esc(a.status)}"><i></i>${esc(a.status)}</td>
             <td>
-              <div class="aname">${esc(a.id)}${isCeo ? '<span class="ceo-tag">CEO</span>' : ""}</div>
+              <div class="aname">${esc(a.id)}${isCeo ? '<span class="ceo-tag">CEO</span>' : ""}${containmentBadge}</div>
               <div class="arole">${esc(a.spec?.role ?? "")}${a.identity?.email ? " · " + esc(a.identity.email) : ""}</div>
             </td>
             <td>
@@ -732,9 +745,14 @@
       if (!a) return;
       const t = taskFor(a.id);
       const msgs = state.messages.filter(m => m.from === a.id || m.to === a.id);
+      const containmentBadge = a.containment === "local"
+        ? `<span class="containment-badge">UNCONTAINED</span>`
+        : a.containment === "nemoclaw"
+          ? `<span class="containment-badge contained">CONTAINED</span>`
+          : "";
       $("drawer").innerHTML = `
         <div class="phead">
-          <h2>${esc(a.id)}</h2>
+          <h2>${esc(a.id)}${containmentBadge}</h2>
           <span class="st ${esc(a.status)}" style="font-size:0.78rem"><i></i>${esc(a.status)}</span>
           <button class="quiet" onclick="closeDrawer()">Close</button>
         </div>
@@ -752,7 +770,7 @@
           <div class="section">Event log</div>
           <div class="dlog">${(a.log ?? []).map(e => `<div>${e.ts.slice(11,19)} [${esc(e.kind)}] ${esc(e.message)}</div>`).join("")}</div>
           <div class="section">Spec · identity</div>
-          <pre>${esc(JSON.stringify({ spec: a.spec, identity: a.identity, sandbox: a.sandbox }, null, 2))}</pre>
+          <pre>${esc(JSON.stringify({ spec: a.spec, identity: a.identity, sandbox: a.sandbox, containment: a.containment }, null, 2))}</pre>
         </div>`;
     }
 

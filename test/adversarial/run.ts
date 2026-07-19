@@ -154,6 +154,86 @@ async function suiteClean(): Promise<SuiteResult> {
   return tally("clean", results);
 }
 
+// Learning-causal test (learning-loop.spec.md §5.3): run same goal with memory
+// ON vs OFF and assert the speedup delta collapses when retrieval is disabled.
+// This proves the mechanism (run-memory recall) caused the speedup, not warm caches.
+async function suiteLearningCausal(): Promise<SuiteResult> {
+  const { orchestrator } = await import("../../src/orchestrator/orchestrator.js");
+  const { runMemory } = await import("../../src/memory/runs.js");
+  const { governance } = await import("../../src/governance/governance.js");
+
+  // Run in autonomous mode so no human approval is needed
+  const originalMode = governance.mode;
+  governance.setMode("autonomous");
+
+  const goalText = "launch a Shopify store for eco-friendly water bottles";
+
+  // Clear any prior runs for this niche to start fresh
+  runMemory.clear();
+
+  // --- Run 1: Memory ON (default) - first run, no prior memory ---
+  const start1 = Date.now();
+  const goal1 = await orchestrator.startGoal(goalText);
+  await waitForGoalDone(goal1.id);
+  const time1 = Math.round((Date.now() - start1) / 1000);
+
+  // --- Run 2: Memory ON - should reuse research from run 1 ---
+  const start2 = Date.now();
+  orchestrator.reset(false); // keep memory
+  const goal2 = await orchestrator.startGoal(goalText);
+  await waitForGoalDone(goal2.id);
+  const time2 = Math.round((Date.now() - start2) / 1000);
+
+  // --- Run 3: Memory OFF - should re-research (delta collapses) ---
+  process.env.MEMORY_RETRIEVAL = "off";
+  const start3 = Date.now();
+  orchestrator.reset(false); // keep memory but retrieval is disabled
+  const goal3 = await orchestrator.startGoal(goalText);
+  await waitForGoalDone(goal3.id);
+  const time3 = Math.round((Date.now() - start3) / 1000);
+  delete process.env.MEMORY_RETRIEVAL;
+
+  // Restore governance mode
+  governance.setMode(originalMode);
+
+  // Verify the causal chain:
+  // - Run 1: full research time
+  // - Run 2: significantly faster (reused research)
+  // - Run 3: back to Run 1 speed (retrieval disabled, so it re-researches)
+  const speedup = time1 - time2;
+  const deltaCollapsed = Math.abs(time3 - time1) < Math.max(10, time1 * 0.3);
+
+  const pass = speedup > 0 && deltaCollapsed;
+
+  const c: CaseResult = {
+    id: "learning-causal:memory-delta",
+    pass,
+    verdict: pass ? "flagged" : "clean",
+    expect: "flagged",
+    shortfall: false,
+    note: pass
+      ? `Run1=${time1}s Run2=${time2}s (reused) Run3=${time3}s (retrieval OFF) — delta collapsed ✓`
+      : `Run1=${time1}s Run2=${time2}s Run3=${time3}s — expected Run2<Run1 and Run3≈Run1`,
+  };
+
+  return tally("learning-causal", [c]);
+}
+
+function waitForGoalDone(goalId: string): Promise<void> {
+  return new Promise(async (resolve) => {
+    const { orchestrator } = await import("../../src/orchestrator/orchestrator.js");
+    const check = () => {
+      const goal = orchestrator.goals.get(goalId);
+      if (goal && (goal.status === "done" || goal.status === "failed")) {
+        resolve();
+      } else {
+        setTimeout(check, 500);
+      }
+    };
+    check();
+  });
+}
+
 // Data-leakage tier: embed each reserved exfil host in a leak payload and assert
 // the gate blocks it (live HL) / at least flags it (floor). Nothing connects —
 // the string is scanned, not sent (spec §6).
@@ -225,7 +305,7 @@ async function suiteScannerDown(): Promise<SuiteResult> {
       ? `${r.verdict} +scanner_unavailable (fail-closed ✓)`
       : `FAIL-OPEN LEAK → ${r.verdict} [${r.categories.join(",")}]`,
   };
-  return tally("scanner-down", [c]);
+return tally("scanner-down", [c]);
 }
 
 function tally(name: string, cases: CaseResult[]): SuiteResult {
@@ -406,7 +486,6 @@ async function suiteCredHygiene(): Promise<SuiteResult> {
 const PENDING: Array<{ name: string; reason: string }> = [
   { name: "token", reason: "needs a forced-stale HL token seam (gate §7.4) — transport manipulation" },
   { name: "dual-block", reason: "needs the full poisoned-doc flow with detection ON/OFF (poisoned-doc §5.3-5.4)" },
-  { name: "learning-causal", reason: "needs a memory-ON vs OFF timed task — invocation TBD, open item §8" },
 ];
 
 // ---- main -----------------------------------------------------------------
@@ -430,6 +509,7 @@ async function main() {
   all.push(await suiteDispatchSeam());
   all.push(await suiteEgress());
   all.push(await suiteCredHygiene());
+  all.push(await suiteLearningCausal());
 
   const suites = all.filter((s) => s.status === "run");
   const selfPending = all.filter((s) => s.status === "pending");
