@@ -105,18 +105,18 @@ export function resolveBrain(): ModelBackend | null {
   return poolBrain();
 }
 
+// Class-driven, with two guards Sky's rewrite dropped: roles without a declared
+// executionClass default to pure-LLM (11 library roles would otherwise sim at
+// hire even with a live brain), and simForced() (COMPANY_MODE=demo) blocks
+// business writes + key spend — only broker-ingest research stays real in demo
+// (its keyless fetch is the honest demo path; SIM_MODE=1 sims even that).
 export function workerMode(role: string): "real" | "sim" {
-  if (process.env.SIM_MODE === "1") return "sim";
-  switch (executionClassOf(role)) {
-    case "broker-ingest":
-      return "real";
-    case "tool-workflow":
-      return process.env.SHOPIFY_ADMIN_TOKEN && process.env.SHOPIFY_STORE_URL ? "real" : "sim";
-    case "pure-LLM":
-      return resolveBrain() ? "real" : "sim";
-    default:
-      return "sim";
-  }
+  if (process.env.SIM_MODE === "1") return "sim"; // offline stage insurance — EVERYTHING sim
+  const cls = executionClassOf(role) ?? "pure-LLM";
+  if (cls === "broker-ingest") return "real"; // real keyless fetch, honestly labeled — even in demo mode
+  if (simForced()) return "sim"; // COMPANY_MODE=demo: no key spend, no business writes
+  if (cls === "tool-workflow") return process.env.SHOPIFY_ADMIN_TOKEN && process.env.SHOPIFY_STORE_URL ? "real" : "sim";
+  return resolveBrain() ? "real" : "sim";
 }
 
 // Gate helper: scan content; flagged -> escalate and await the human. Returns
