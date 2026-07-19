@@ -97,6 +97,13 @@ exact backend+model is demo-safe.
 
 ## Go-live checklist (each item flips one worker/layer from sim to real)
 
+> **July 18:** every library role now has a real path. Roles without a bespoke
+> implementation run `runGenericRole()` (worker.ts): objective + upstream
+> handoffs → gated brain call → named artifact downstream. One working model
+> key (Featherless hackathon tokens, Anthropic, or NVIDIA) flips ALL of them
+> real at once; a key dying mid-run degrades that task to labeled sim instead
+> of failing the goal (same for research's LLM analysis and the copywriter).
+
 The code paths are built and default to sim when a dependency is missing. Add
 the key/box and the dashboard label flips REAL automatically — no code change.
 
