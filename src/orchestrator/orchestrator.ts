@@ -11,7 +11,7 @@ import { governance } from "../governance/governance.js";
 import { bus } from "../bus/bus.js";
 import { registry } from "../registry/registry.js";
 import { createAgent } from "../factory/factory.js";
-import { workerMode, runResearch, runStoreBuilder, runCopywriter, gateOrEscalate, type Product } from "../factory/worker.js";
+import { workerMode, runResearch, runStoreBuilder, runCopywriter, runGenericRole, gateOrEscalate, type Product } from "../factory/worker.js";
 import { escalations } from "../security/escalations.js";
 import { runMemory, type RunRecord } from "../memory/runs.js";
 import { missingFor } from "../config/env.js";
@@ -197,6 +197,7 @@ class Orchestrator extends EventEmitter {
         credentials: r.credentials,
         policyTemplate: r.policyTemplate,
         reasoning: r.reasoning,
+        handoff: r.handoff,
       },
     }));
   }
@@ -389,6 +390,22 @@ class Orchestrator extends EventEmitter {
         task.output = url;
       } else if (agent.spec.role === "copywriter") {
         task.output = await runCopywriter(agent, task, niche, this.research.get(task.goalId) ?? [], onProgress);
+      } else {
+        // Any other library role: generic gated artifact turn. Upstream task
+        // outputs travel as named handoff sections (MetaGPT SOP-style).
+        const upstream = task.dependsOn
+          .map((d) => this.tasks.get(d))
+          .filter((t): t is Task => Boolean(t))
+          .map((t) => {
+            const spec = t.agentId ? registry.get(t.agentId)?.spec : undefined;
+            const data = typeof t.outputData === "string"
+              ? t.outputData
+              : t.outputData != null ? JSON.stringify(t.outputData).slice(0, 2000) : "";
+            const output = (t.output && t.output.length >= data.length ? t.output : data) || t.output || "";
+            return { role: spec?.role ?? "upstream", handoff: spec?.handoff, output };
+          });
+        task.output = await runGenericRole(agent, task, niche, upstream, onProgress);
+        task.outputData = task.output;
       }
       this.completeTask(task, agent, "done");
     } catch (err: any) {

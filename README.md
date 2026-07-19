@@ -130,6 +130,13 @@ it directly. `reset demo` clears everything.
   host independently. This is money-demo #2.
 - **Store-builder — REAL when `SHOPIFY_ADMIN_TOKEN` + `SHOPIFY_STORE_URL` are
   set** (POSTs 3 products to the Admin API); otherwise labeled **SIMULATION**.
+- **Library workers (strategist, analyst, product-manager, architect, builder,
+  qa-reviewer, keyword-miner…) — REAL when any model key is connected.** Each
+  runs a gated artifact turn: objective + upstream handoff artifacts in, its
+  named artifact (PRD, system design, audit verdicts…) out on the bus and into
+  the next role's prompt. No key → labeled sim. **A key that dies mid-run
+  (out of credit, revoked) degrades that one task to labeled sim with the
+  reason — it never fails the goal.**
 - **Nemotron inference — REAL with `NVIDIA_INFERENCE_API_KEY` +
   `WORKER_BACKEND=nvidia`.** `SIM_MODE=1` forces everything to sim as stage
   insurance.

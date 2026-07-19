@@ -22,6 +22,7 @@ export interface AgentSpec {
   model?: string;            // Nemotron slug; Factory picks default if omitted
   reasoning?: "low" | "medium" | "high"; // Nemotron thinking budget (§6.2); maps to
   //                          chat_template_kwargs.enable_thinking/low_effort. Factory defaults per role.
+  handoff?: string;          // named artifact this role delivers downstream (e.g. "PRD")
 }
 
 export interface AgentIdentity {
