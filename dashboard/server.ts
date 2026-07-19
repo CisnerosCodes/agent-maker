@@ -109,8 +109,8 @@ function serveStatic(req: IncomingMessage, res: ServerResponse, urlPath: string)
   const ext = rel.slice(rel.lastIndexOf("."));
   const type = STATIC_TYPES[ext] ?? "application/octet-stream";
   const size = statSync(file).size;
-  // Range support matters: browsers seek <video> via byte-range requests, and
-  // the landing page scrubs the bee footage by scroll position.
+  // Range support matters: browsers seek <video> via byte-range requests
+  // (e.g. the optional /media/demo.mp4 on the landing page).
   const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? "");
   if (range && (range[1] || range[2])) {
     const start = range[1] ? parseInt(range[1], 10) : Math.max(0, size - parseInt(range[2], 10));

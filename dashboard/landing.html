@@ -458,17 +458,6 @@
     }
     .cta-final .foot a:hover { color: var(--text); }
 
-    /* ---------- hero bee medallion (mockup 2a's ring, with the footage inside) */
-    .bee-medal {
-      position: absolute; right: -56px; top: -118px; width: 200px; height: 200px; z-index: 3;
-      border-radius: 50%; border: 1px solid rgba(139,92,246,0.35);
-      box-shadow: 0 20px 60px rgba(109,40,217,0.45);
-      overflow: hidden; pointer-events: none; background: #050308;
-    }
-    .bee-medal video { width: 100%; height: 100%; object-fit: cover; display: block; }
-    @media (max-width: 1120px) { .bee-medal { right: 0; width: 150px; height: 150px; top: -85px; } }
-    @media (max-width: 640px) { .bee-medal { display: none; } }
-
     /* scroll reveals */
     .reveal { opacity: 0; transform: translateY(14px); transition: opacity .55s ease, transform .55s ease; }
     .reveal.in { opacity: 1; transform: none; }
@@ -504,10 +493,6 @@
     </div>
 
     <div class="window-wrap">
-      <div class="bee-medal" aria-hidden="true">
-        <video id="beeSpin" muted loop autoplay playsinline src="/media/bee-spin.mp4"
-               onerror="this.parentElement.remove()"></video>
-      </div>
       <div class="window">
         <div class="chrome"><i></i><i></i><i></i><span class="url" id="mdUrl">clawcolony.ai/app — Mission Control</span></div>
         <div class="stage" id="mdStage">
@@ -1176,15 +1161,6 @@
       demoLoop();
     }
 
-    // ---------- hero bee medallion: spins slowly; parked for reduced motion ----------
-    const beeSpin = $("beeSpin");
-    if (beeSpin && reduced) {
-      beeSpin.removeAttribute("autoplay");
-      beeSpin.addEventListener("loadedmetadata", () => {
-        try { beeSpin.currentTime = 1; } catch {}
-        beeSpin.pause();
-      });
-    }
     // headless-verification hook: /#y=2600 jumps the page there
     const dbgY = /^#y=(\d+)$/.exec(location.hash);
     if (dbgY) addEventListener("load", () => scrollTo({ top: +dbgY[1], behavior: "instant" }));
