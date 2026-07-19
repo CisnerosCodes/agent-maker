@@ -19,6 +19,7 @@ import { runMemory, type RunRecord } from "../memory/runs.js";
 import { missingFor } from "../config/env.js";
 import { companyProfile, clearCompanyProfile } from "../config/company.js";
 import { friendlyError } from "../config/errors.js";
+import { modeStatus } from "../config/mode.js";
 import { matchPlaybook, milestoneFor } from "../roles/library.js";
 import { nicheFor } from "../config/niche.js";
 
@@ -126,6 +127,21 @@ export class Orchestrator extends EventEmitter {
 
   async startGoal(text: string) {
     this.ensureCeo();
+
+    // REAL mode contract: the company never STARTS a goal it already knows it
+    // cannot execute for real. (Mid-run key death still degrades per-task to
+    // labeled sim — that is resilience; launching keyless in REAL mode would
+    // be a silent demo wearing a REAL badge.)
+    const mode = modeStatus();
+    if (mode.mode === "real" && !mode.ready) {
+      const goal: Goal = { id: `goal-${randomUUID().slice(0, 6)}`, text, status: "failed", threadId: "company", createdAt: new Date().toISOString() };
+      bus.post({
+        threadId: "company", from: "ceo", kind: "system",
+        body: `Goal refused — ${mode.reason} (Or switch to DEMO mode in Connections to run everything as labeled simulation.)`,
+      });
+      this.emitGoal(goal);
+      return goal;
+    }
 
     // Concurrency refusal (factory-provisioning §6, C16): one company, one job at
     // a time for the demo. A second goal would spawn a second agent record per

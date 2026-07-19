@@ -134,7 +134,9 @@ export const INTEGRATIONS: Integration[] = [
 ];
 
 // Env vars the setup endpoint may write. Anything else is refused.
-const WRITABLE = new Set(INTEGRATIONS.flatMap((i) => i.keys));
+// COMPANY_MODE is the demo/real switch (not a secret) — settable from the
+// dashboard so a founder can flip modes without touching .env by hand.
+const WRITABLE = new Set([...INTEGRATIONS.flatMap((i) => i.keys), "COMPANY_MODE"]);
 
 export function integrationConnected(i: Integration): boolean {
   return i.keys.every((k) => Boolean(process.env[k]));
@@ -186,4 +188,19 @@ export function saveEnvVar(key: string, value: string): void {
   else lines.push(entry);
   writeFileSync(ENV_FILE, lines.join("\n").replace(/\n*$/, "\n"));
   console.log(`[env] ${key} saved (value not logged)`);
+}
+
+// Remove a credential: live env + .env line. Same allowlist as saveEnvVar.
+// This is how an operator drops a dead key (e.g. an out-of-credit brain) so
+// the pool stops considering it, or clears COMPANY_MODE back to auto.
+export function clearEnvVar(key: string): void {
+  if (!WRITABLE.has(key)) throw new Error(`"${key}" is not a configurable credential`);
+  delete process.env[key];
+  if (existsSync(ENV_FILE)) {
+    const lines = readFileSync(ENV_FILE, "utf8")
+      .split(/\r?\n/)
+      .filter((l) => !l.match(new RegExp(`^\\s*${key}\\s*=`)));
+    writeFileSync(ENV_FILE, lines.join("\n").replace(/\n*$/, "\n"));
+  }
+  console.log(`[env] ${key} cleared`);
 }

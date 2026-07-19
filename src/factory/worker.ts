@@ -19,7 +19,8 @@
 
 import type { AgentRecord, ScanResult, Task } from "../types.js";
 import type { ModelBackend } from "../evals/types.js";
-import { AnthropicApiBackend, ClaudeCliBackend, OpenAICompatBackend } from "../evals/backends.js";
+import { poolBrain, pinnedBrain } from "../providers/pool.js";
+import { simForced } from "../config/mode.js";
 import { scan } from "../security/gate.js";
 import { escalations } from "../security/escalations.js";
 import { governance } from "../governance/governance.js";
@@ -85,42 +86,27 @@ function warnBrainOnce(msg: string) {
   console.warn(`[worker] ${msg}`);
 }
 
+// The brain is now the POOL (src/providers/pool.ts): every configured provider
+// in failover order, health-tracked. An explicit WORKER_BACKEND still pins one
+// provider with no failover (operator intent); a pinned-but-keyless backend
+// falls back to sim, loudly — never a backend constructed around an undefined
+// key (that crashed mid-task with a cryptic 401).
 export function resolveBrain(): ModelBackend | null {
-  if (process.env.SIM_MODE === "1") return null;
-  const pick = process.env.WORKER_BACKEND;
-  // An explicit WORKER_BACKEND with no matching key must NOT construct a
-  // backend around an undefined key (that crashed mid-task with a cryptic
-  // 401). Fall back to sim, loudly.
-  // Featherless first: when no explicit pick, its key wins the auto-detect so a
-  // demo only needs FEATHERLESS_API_KEY pasted. Reuses the OpenAI-compat class.
-  if (pick === "featherless" || (!pick && process.env.FEATHERLESS_API_KEY)) {
-    if (process.env.FEATHERLESS_API_KEY)
-      return new OpenAICompatBackend(
-        process.env.FEATHERLESS_API_KEY,
-        process.env.FEATHERLESS_API_BASE ?? "https://api.featherless.ai/v1",
-        "featherless",
-      );
-    warnBrainOnce("WORKER_BACKEND=featherless but FEATHERLESS_API_KEY is not set — workers fall back to simulation. Paste the key in Connections or unset WORKER_BACKEND.");
+  if (simForced()) return null;
+  const { pin, provider, missingKeys } = pinnedBrain();
+  if (pin && !provider) {
+    warnBrainOnce(
+      missingKeys.length
+        ? `WORKER_BACKEND=${pin} but ${missingKeys.join(" and ")} is not set — workers fall back to simulation. Paste the key in Connections or unset WORKER_BACKEND.`
+        : `WORKER_BACKEND=${pin} matches no known brain provider — workers fall back to simulation. Use one of: featherless | api | nvidia | cli.`,
+    );
     return null;
   }
-  if (pick === "api") {
-    if (process.env.ANTHROPIC_API_KEY) return new AnthropicApiBackend(process.env.ANTHROPIC_API_KEY);
-    warnBrainOnce("WORKER_BACKEND=api but ANTHROPIC_API_KEY is not set — workers fall back to simulation. Paste the key in Connections or unset WORKER_BACKEND.");
-    return null;
-  }
-  if (pick === "nvidia") {
-    if (process.env.NVIDIA_INFERENCE_API_KEY) return new OpenAICompatBackend(process.env.NVIDIA_INFERENCE_API_KEY, process.env.NVIDIA_API_BASE ?? undefined);
-    warnBrainOnce("WORKER_BACKEND=nvidia but NVIDIA_INFERENCE_API_KEY is not set — workers fall back to simulation. Paste the key in Connections or unset WORKER_BACKEND.");
-    return null;
-  }
-  if (pick === "cli") return new ClaudeCliBackend();
-  if (process.env.ANTHROPIC_API_KEY) return new AnthropicApiBackend(process.env.ANTHROPIC_API_KEY);
-  if (process.env.NVIDIA_INFERENCE_API_KEY) return new OpenAICompatBackend(process.env.NVIDIA_INFERENCE_API_KEY, process.env.NVIDIA_API_BASE ?? undefined);
-  return null;
+  return poolBrain();
 }
 
 export function workerMode(role: string): "real" | "sim" {
-  if (process.env.SIM_MODE === "1") return "sim";
+  if (simForced()) return "sim"; // COMPANY_MODE=demo or legacy SIM_MODE=1
   if (role === "research") return "real";
   if (role === "store-builder") return process.env.SHOPIFY_ADMIN_TOKEN && process.env.SHOPIFY_STORE_URL ? "real" : "sim";
   if (role === "copywriter") return resolveBrain() ? "real" : "sim";

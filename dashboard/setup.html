@@ -48,6 +48,15 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     .footer-note { color: var(--ink-mute); font-size: .8rem; line-height: 1.7; margin-top: 1.6rem; }
     .footer-note code { background: var(--card); border: 1px solid var(--line); border-radius: 5px; padding: .05rem .35rem; font-size: .74rem; }
+    /* Company-mode switch */
+    .mode-panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: .95rem 1.1rem; margin-bottom: 1.1rem; box-shadow: var(--shadow); }
+    .mode-panel h3 { margin: 0 0 .3rem; font-size: .92rem; }
+    .mode-panel .mode-reason { font-size: .84rem; color: var(--ink-dim); line-height: 1.55; margin: .3rem 0 .6rem; }
+    .mode-btns { display: flex; gap: .5rem; flex-wrap: wrap; }
+    .mode-btns button { font-family: var(--font-mono); font-size: .72rem; letter-spacing: .05em; }
+    .mode-btns button.active { outline: 2px solid var(--accent-ink); }
+    .pool-line { font-family: var(--font-mono); font-size: .72rem; color: var(--ink-mute); margin-top: .55rem; }
+    .pool-line .up { color: var(--green); } .pool-line .down { color: var(--red); }
   </style>
 </head>
 <body>
@@ -58,6 +67,16 @@
       key actually work right now" (a live call to each connected provider). Green means go. Anything
       amber or red tells you the exact fix. Nothing here ever shows or sends a key value.
     </p>
+    <div class="mode-panel" id="modePanel" style="display:none">
+      <h3>Company mode</h3>
+      <div class="mode-reason" id="modeReason"></div>
+      <div class="mode-btns">
+        <button id="modeDemo">DEMO — no keys, everything labeled simulation</button>
+        <button id="modeAuto">AUTO — real when a key works</button>
+        <button id="modeReal">REAL — require a model key</button>
+      </div>
+      <div class="pool-line" id="poolLine"></div>
+    </div>
     <div class="toolbar">
       <button class="primary" id="runBtn">Run all checks</button>
       <button id="runOffline">Run without calling providers</button>
@@ -86,7 +105,8 @@
     // Names shown while the checks are in flight, so the user watches the
     // checklist fill in instead of staring at a blank page.
     const PLACEHOLDERS = [
-      ["core", "Node.js version"], ["core", ".env file"], ["core", "Internet access (research data source)"],
+      ["core", "Node.js version"], ["core", ".env file"], ["core", "Company mode (demo / real)"],
+      ["core", "Internet access (research data source)"],
       ["core", "Data folder is writable"], ["core", "Model eval results (the /evals page)"],
       ["keys", "AI brain — Claude key"], ["keys", "AI brain — NVIDIA Nemotron key"],
       ["keys", "HiddenLayer security scanning"], ["keys", "Apify live research"],
@@ -144,6 +164,39 @@
     }
     $("runBtn").onclick = () => run(true);
     $("runOffline").onclick = () => run(false);
+
+    // --- Company mode switch + brain-pool health ---------------------------
+    async function loadMode() {
+      try {
+        const [m, p] = await Promise.all([
+          fetch("/api/mode").then(r => r.json()),
+          fetch("/api/providers").then(r => r.json()),
+        ]);
+        $("modePanel").style.display = "block";
+        $("modeReason").textContent = m.reason;
+        const src = m.source; // env | sim-mode | auto
+        $("modeDemo").classList.toggle("active", src !== "auto" && m.mode === "demo");
+        $("modeReal").classList.toggle("active", src === "env" && m.mode === "real");
+        $("modeAuto").classList.toggle("active", src === "auto");
+        const rows = (p.providers || []).filter(x => !x.pinOnly).map(x => {
+          const st = !x.configured ? "no key" : x.state === "down" ? `DOWN (${x.reason})` : x.state;
+          const cls = x.state === "down" ? "down" : x.configured && x.state !== "unknown" ? "up" : "";
+          return `${x.id}: <span class="${cls}">${st}</span>`;
+        });
+        $("poolLine").innerHTML =
+          `Brains — ${rows.join(" · ")}${p.order.length ? ` &nbsp;|&nbsp; failover order: ${p.order.join(" → ")}` : ""}${p.pinned ? ` &nbsp;|&nbsp; pinned: ${p.pinned}` : ""}`;
+      } catch { /* panel is optional; checks below still run */ }
+    }
+    async function setMode(mode) {
+      await fetch("/api/mode", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode }) });
+      await loadMode();
+      run(true); // mode affects the checklist verdict — re-check
+    }
+    $("modeDemo").onclick = () => setMode("demo");
+    $("modeAuto").onclick = () => setMode("auto");
+    $("modeReal").onclick = () => setMode("real");
+
+    loadMode();
     run(true); // auto-run on load — the page IS the wizard
   </script>
 </body>

@@ -12,6 +12,8 @@
 // SECRET HYGIENE: results carry booleans + human text only. Never key values.
 
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { modeStatus } from "./mode.js";
+import { brainPoolStatus, noteBrainFailure, noteBrainSuccess } from "../providers/pool.js";
 
 export type CheckStatus = "pass" | "warn" | "fail" | "skip";
 
@@ -91,6 +93,20 @@ export function checkEnvFile(): CheckResult {
     detail: exists ? "Found — keys you save in Connections persist across restarts."
       : "No .env file yet. Everything still runs (labeled SIMULATION); keys you paste in Connections will create it.",
     fix: exists ? undefined : "Optional: copy .env.example to .env, or just paste keys in the Connections panel — it writes the file for you.",
+  });
+}
+
+export function checkCompanyMode(): CheckResult {
+  const ms = modeStatus();
+  const pool = brainPoolStatus();
+  const orderNote = pool.order.length ? ` Brain failover order: ${pool.order.join(" → ")}.` : "";
+  return result({
+    id: "company-mode", group: "core", label: "Company mode (demo / real)",
+    status: ms.mode === "real" && !ms.ready ? "fail" : "pass",
+    detail: `${ms.mode.toUpperCase()} (${ms.source === "auto" ? "auto-derived from keys" : ms.source === "sim-mode" ? "legacy SIM_MODE=1" : "set by operator"}). ${ms.reason}${orderNote}`,
+    fix: ms.mode === "real" && !ms.ready
+      ? "Paste a working model key (Featherless / Claude / NVIDIA) in Connections, or switch to DEMO mode — both are one click on /setup."
+      : undefined,
   });
 }
 
@@ -223,15 +239,31 @@ const KEY_CHECKS: KeyCheck[] = [
   { id: "key-resend", label: "Resend agent email", envKeys: ["RESEND_API_KEY"], probe: probeResend },
 ];
 
+// Live brain probes double as brain-pool health signals: when doctor runs
+// inside the server process (/api/doctor), a failed probe marks that provider
+// down BEFORE any task wastes a real call on it, and a passing probe clears a
+// stale down-mark. ("warn" = the key works — rate-limited or wrong model slug.)
+const BRAIN_CHECK_TO_PROVIDER: Record<string, string> = {
+  "key-anthropic": "anthropic",
+  "key-nvidia": "nvidia",
+  "key-featherless": "featherless",
+};
+
 async function runKeyCheck(kc: KeyCheck): Promise<CheckResult> {
   if (!kc.envKeys.every((k) => process.env[k])) {
     const m = missing(kc.label, kc.envKeys);
     return result({ id: kc.id, group: "keys", label: kc.label, ...m });
   }
+  const providerId = BRAIN_CHECK_TO_PROVIDER[kc.id];
   try {
     const r = await kc.probe();
+    if (providerId) {
+      if (r.status === "fail") noteBrainFailure(providerId, r.detail);
+      else noteBrainSuccess(providerId);
+    }
     return result({ id: kc.id, group: "keys", label: kc.label, live: true, ...r });
   } catch (err: any) {
+    if (providerId) noteBrainFailure(providerId, String(err?.message ?? err));
     const timedOut = err.name === "TimeoutError";
     return result({
       id: kc.id, group: "keys", label: kc.label, live: true, status: "fail",
@@ -254,7 +286,7 @@ export interface DoctorReport {
 
 export async function runDoctor(opts: { live?: boolean; only?: string[] } = {}): Promise<DoctorReport> {
   const live = opts.live !== false; // default: really test the keys
-  const core: CheckResult[] = [checkNode(), checkEnvFile(), checkDataDir(), checkEvalData()];
+  const core: CheckResult[] = [checkNode(), checkEnvFile(), checkCompanyMode(), checkDataDir(), checkEvalData()];
   const netP = checkNetwork();
   const keyP = live
     ? Promise.all(KEY_CHECKS.filter((k) => !opts.only || opts.only.includes(k.id)).map(runKeyCheck))

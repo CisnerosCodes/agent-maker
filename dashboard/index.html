@@ -173,6 +173,15 @@
     .tbar i { display: block; height: 100%; background: var(--accent); transition: width .6s ease; }
     .mode-real { font-family: var(--font-mono); font-size: 0.68rem; color: var(--green); font-weight: 600; letter-spacing: 0.04em; }
     .mode-sim { font-family: var(--font-mono); font-size: 0.68rem; color: var(--ink-mute); letter-spacing: 0.04em; }
+    /* Company-mode chip (demo/real) in the page header — click opens /setup */
+    .company-mode {
+      font-family: var(--font-mono); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em;
+      padding: 0.22rem 0.6rem; border-radius: 999px; cursor: pointer; text-decoration: none;
+      border: 1px solid var(--ink-mute); color: var(--ink-mute); align-self: center; white-space: nowrap;
+    }
+    .company-mode.demo { border-color: var(--honey); color: var(--honey); }
+    .company-mode.real { border-color: var(--green); color: var(--green); }
+    .company-mode.blocked { border-color: var(--red); color: var(--red); }
     .eta { font-family: var(--font-mono); font-size: 0.7rem; color: var(--ink-mute); white-space: nowrap; }
     td.rowact { white-space: nowrap; }
     td.rowact button { padding: 0.25rem 0.6rem; font-size: 0.74rem; }
@@ -305,6 +314,7 @@
     <main>
       <header class="pagehead">
         <h1>Mission Control</h1>
+        <a id="companyMode" class="company-mode" href="/setup" title="Loading mode…">…</a>
         <div class="goalbar">
           <input id="goalInput" placeholder='Give the CEO a goal, e.g. "make me a shopify store"' />
           <button id="goalBtn" class="primary">Launch</button>
@@ -1005,6 +1015,17 @@
       state.runs = s.runs || [];
       state.autonomyMode = s.autonomyMode || "supervised";
       state.pendingPlans = s.pendingPlans || [];
+      if (s.mode) renderCompanyMode(s.mode);
+    }
+    // Company-mode chip: DEMO (amber, everything labeled sim) vs REAL (green,
+    // model calls live) vs REAL-but-no-key (red, goals refused). Click -> /setup.
+    function renderCompanyMode(m) {
+      const el = $("companyMode");
+      if (!el || !m) return;
+      const blocked = m.mode === "real" && !m.ready;
+      el.className = "company-mode " + (blocked ? "blocked" : m.mode);
+      el.textContent = blocked ? "REAL · NO KEY" : m.mode === "real" ? "REAL MODE" : "DEMO MODE";
+      el.title = m.reason || "";
     }
     const es = new EventSource("/events");
     es.onmessage = (ev) => {
@@ -1017,6 +1038,7 @@
       else if (type === "escalation") state.escalations.set(data.id, data);
       else if (type === "run") state.runs.push(data);
       else if (type === "autonomy") state.autonomyMode = data.mode;
+      else if (type === "mode") renderCompanyMode(data);
       else if (type === "setup") { setupState = data; renderSetup(); }
       else if (type === "planApproval") {
         state.pendingPlans = state.pendingPlans.filter(p => p.goalId !== data.goalId);

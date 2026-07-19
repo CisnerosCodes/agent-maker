@@ -13,8 +13,10 @@ import { orchestrator } from "../src/orchestrator/orchestrator.js";
 import { escalations } from "../src/security/escalations.js";
 import { heuristicScan } from "../src/security/detect.js";
 import { governance } from "../src/governance/governance.js";
-import { setupStatus, saveEnvVar } from "../src/config/env.js";
+import { setupStatus, saveEnvVar, clearEnvVar } from "../src/config/env.js";
 import { runDoctor } from "../src/config/doctor.js";
+import { brainPoolStatus, resetHealthForKey } from "../src/providers/pool.js";
+import { modeStatus } from "../src/config/mode.js";
 import { companyProfile, saveCompanyProfile, suggestedFirstGoal, STARTER_PACKS } from "../src/config/company.js";
 
 const PORT = Number(process.env.DASHBOARD_PORT ?? 4000);
@@ -63,6 +65,7 @@ function snapshot() {
     agents: registry.all(),
     messages: bus.recent(),
     escalations: escalations.all(),
+    mode: modeStatus(),
     ...orchestrator.snapshot(),
   };
 }
@@ -181,11 +184,43 @@ createServer(async (req, res) => {
       const { key, value } = await body(req);
       try {
         saveEnvVar(String(key ?? ""), String(value ?? ""));
+        resetHealthForKey(String(key ?? "")); // a fresh key deserves a fresh verdict
         broadcast("setup", setupStatus());
+        broadcast("mode", modeStatus());
         json(res, { ok: true, status: setupStatus() });
       } catch (e: any) {
         json(res, { error: e.message }, 400);
       }
+    } else if (req.url === "/api/setup" && req.method === "DELETE") {
+      // Remove a credential (e.g. a dead out-of-credit key) so the brain pool
+      // stops considering it. Same allowlist as saving.
+      const { key } = await body(req);
+      try {
+        clearEnvVar(String(key ?? ""));
+        resetHealthForKey(String(key ?? ""));
+        broadcast("setup", setupStatus());
+        broadcast("mode", modeStatus());
+        json(res, { ok: true, status: setupStatus() });
+      } catch (e: any) {
+        json(res, { error: e.message }, 400);
+      }
+    } else if (req.url === "/api/providers" && req.method === "GET") {
+      // Brain-pool health: which providers are configured, which one answers
+      // next, who is cooling down and why. Booleans + friendly text only.
+      json(res, brainPoolStatus());
+    } else if (req.url === "/api/mode" && req.method === "GET") {
+      json(res, modeStatus());
+    } else if (req.url === "/api/mode" && req.method === "POST") {
+      // The demo/real switch. "auto" clears COMPANY_MODE (derive from keys).
+      const { mode } = await body(req);
+      const want = String(mode ?? "").trim().toLowerCase();
+      if (!["demo", "real", "auto"].includes(want)) return json(res, { error: `mode must be demo, real or auto (got "${want}")` }, 400);
+      if (want === "auto") clearEnvVar("COMPANY_MODE");
+      else saveEnvVar("COMPANY_MODE", want);
+      const status = modeStatus();
+      bus.post({ threadId: "company", from: "user", kind: "system", body: `Company mode set to ${want.toUpperCase()} — ${status.reason}` });
+      broadcast("mode", status);
+      json(res, { ok: true, ...status });
     } else if (req.url === "/events") {
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
