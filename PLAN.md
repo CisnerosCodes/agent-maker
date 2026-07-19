@@ -1,4 +1,4 @@
-# Agent-Maker — Hackathon Battle Plan
+# Claw Colony — Hackathon Battle Plan
 
 AITX Community x NVIDIA Claw Agent Hackathon · July 17–19, 2026 · Antler, Austin
 Team: Adrian (orchestration/harness), Sky (security/NemoClaw), Alex (TBD)

@@ -4,7 +4,7 @@ Paste this into Claude Code / Cursor from the repo root. One copy for Adrian, on
 
 ---
 
-You are working on **agent-maker**, a hackathon project (code freeze Sunday 11 AM). Read `PLAN.md` and `README.md` fully before writing any code — they are the source of truth for scope and priorities.
+You are working on **Claw Colony**, a hackathon project (code freeze Sunday 11 AM). Read `PLAN.md` and `README.md` fully before writing any code — they are the source of truth for scope and priorities.
 
 ## Context
 

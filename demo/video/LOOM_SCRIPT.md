@@ -1,4 +1,4 @@
-# Agent-Maker — Loom Demo Script (target 3:30, hard cap 5:00)
+# Claw Colony — Loom Demo Script (target 3:30, hard cap 5:00)
 
 Read at a natural pace (~140 words per minute). Every line is written to be
 spoken while the screen does something — never narrate a static screen for more
@@ -21,7 +21,7 @@ not narrate containment you cannot show.
 > Everyone at this hackathon is selling agents. We are selling the employment
 > contract — identity, permissions, supervision, and an audit trail.
 >
-> This is Agent-Maker: a company in a box, where a CEO agent hires its own
+> This is Claw Colony: a company in a box, where a CEO agent hires its own
 > workforce — and every worker it hires is born with a scoped identity, a
 > sandbox policy, and runtime security watching every token.
 >
@@ -141,7 +141,7 @@ agent flips to blocked.]**
 > trail underneath all of it.
 >
 > Hire AI employees you can actually trust — and audit.
-> We are Agent-Maker. Thanks for watching.
+> We are Claw Colony. Thanks for watching.
 
 **[Hold the outro card for 3 seconds. Stop recording.]**
 

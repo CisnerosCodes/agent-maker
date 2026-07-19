@@ -1,4 +1,4 @@
-# Loom Recording Plan — Agent-Maker Demo
+# Loom Recording Plan — Claw Colony Demo
 
 Goal: one clean 3:30 take recorded natively in Loom tonight. Budget 60–90
 minutes total: 20 min staging, 10 min dry run, then takes. Expect to keep
@@ -80,7 +80,7 @@ If the demo is slower than the script, fill with these instead of silence:
   a single stumble — one human stumble reads as live and real.
 - Trim dead air at the start and end in Loom's editor. Do not over-edit; the
   5-minute wall is the only hard constraint.
-- Title it: "Agent-Maker — AI employees you can trust and audit | AITX x
+- Title it: "Claw Colony — AI employees you can trust and audit | AITX x
   NVIDIA Claw Hackathon". Set link permissions to "Anyone with the link" and
   test the link in an incognito window before submitting.
 - Add the video description: the one-liner + repo link + team names.

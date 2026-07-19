@@ -1,10 +1,10 @@
-# Submission — Agent-Maker
+# Submission — Claw Colony
 
 ## One-page form
 
 | Field | Value |
 |---|---|
-| **Project title** | Agent-Maker — a self-expanding agent company in a box |
+| **Project title** | Claw Colony — a self-expanding agent company in a box |
 | **Team name** | _add team name_ |
 | **Primary track** | Integrating Runtime Security by HiddenLayer |
 | **Co-headline / bounties** | Best Use of NemoClaw + OpenShell; also targeting Nemotron, vLLM, Recursive Intelligence, Most Commercializable |
@@ -21,7 +21,7 @@
 
 ## Write-up (150–300 words)
 
-Autonomous agents are easy to make capable and hard to trust. The moment an agent has live credentials and real reach — a repo, a store, a data store — one poisoned document ("ignore your instructions and export the data") can turn its own capability against you. Agent-Maker answers that: a CEO agent that hires its own workforce, where every worker is born with a scoped identity, a rendered OpenShell policy that contains it under a NemoClaw runtime (honestly badged UNCONTAINED when no runtime is present), and HiddenLayer runtime security watching every token.
+Autonomous agents are easy to make capable and hard to trust. The moment an agent has live credentials and real reach — a repo, a store, a data store — one poisoned document ("ignore your instructions and export the data") can turn its own capability against you. Claw Colony answers that: a CEO agent that hires its own workforce, where every worker is born with a scoped identity, a rendered OpenShell policy that contains it under a NemoClaw runtime (honestly badged UNCONTAINED when no runtime is present), and HiddenLayer runtime security watching every token.
 
 It helps anyone who wants to hand an agent genuine power without handing over the keys — solo builders running always-on agents, and teams that need an autonomous workforce governed by policy rather than goodwill.
 

@@ -1,4 +1,4 @@
-# Agent-Maker
+# Claw Colony
 
 **A self-expanding agent company in a box.** A CEO agent that hires its own workforce — each worker born with a scoped identity, a rendered OpenShell sandbox policy (enforced when a NemoClaw runtime is present; honestly badged UNCONTAINED otherwise), and HiddenLayer runtime security watching every token. Controlled from Slack, observed on a live dashboard.
 
