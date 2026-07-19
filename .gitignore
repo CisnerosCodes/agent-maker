@@ -2,6 +2,7 @@ node_modules/
 dist/
 data/*
 !data/evals/
+!data/recordings/
 .env
 policies/rendered/
 test/adversarial/report/*

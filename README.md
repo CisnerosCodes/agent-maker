@@ -1,11 +1,13 @@
 # Agent-Maker
 
-**A self-expanding agent company in a box.** A CEO agent that hires its own workforce — each worker born with a scoped identity, an OpenShell sandbox it cannot escape, and HiddenLayer runtime security watching every token. Controlled from Slack, observed on a live dashboard.
+**A self-expanding agent company in a box.** A CEO agent that hires its own workforce — each worker born with a scoped identity, a rendered OpenShell sandbox policy (enforced when a NemoClaw runtime is present; honestly badged UNCONTAINED otherwise), and HiddenLayer runtime security watching every token. Controlled from Slack, observed on a live dashboard.
 
 Built for the AITX Community x NVIDIA Claw Agent Hackathon (July 2026).
 Primary track: **Integrating Runtime Security by HiddenLayer**. Co-headline: **Best Use of NemoClaw + OpenShell**.
 
-## Setup (do this first — Alex, this section is for you)
+**Not a demo:** six recorded end-to-end business runs (commerce, social, SEO, support, fact-check) on real Claude inference, with full event recordings committed — see [docs/PROOF_OF_REAL_RUNS.md](docs/PROOF_OF_REAL_RUNS.md) and `data/recordings/`.
+
+## Setup (do this first)
 
 **Prerequisites** (the only things you install by hand):
 

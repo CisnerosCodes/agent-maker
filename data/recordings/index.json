@@ -1,0 +1,62 @@
+[
+  {
+    "run": "run1-commerce",
+    "goalId": "goal-f6924b",
+    "finalStatus": "done",
+    "durationSec": 186,
+    "taskCount": 3,
+    "realTasks": 2,
+    "escalations": 1,
+    "eventCount": 112
+  },
+  {
+    "run": "run2-social",
+    "goalId": "goal-60e00d",
+    "finalStatus": "done",
+    "durationSec": 264,
+    "taskCount": 3,
+    "realTasks": 3,
+    "escalations": 1,
+    "eventCount": 111
+  },
+  {
+    "run": "run3-seo-misroute",
+    "goalId": "goal-8e04e1",
+    "finalStatus": "done",
+    "durationSec": 125,
+    "taskCount": 3,
+    "realTasks": 2,
+    "escalations": 1,
+    "eventCount": 109
+  },
+  {
+    "run": "run4-support",
+    "goalId": "goal-75c4de",
+    "finalStatus": "done",
+    "durationSec": 203,
+    "taskCount": 3,
+    "realTasks": 3,
+    "escalations": 4,
+    "eventCount": 106
+  },
+  {
+    "run": "run5-factcheck",
+    "goalId": "goal-77718f",
+    "finalStatus": "done",
+    "durationSec": 232,
+    "taskCount": 2,
+    "realTasks": 2,
+    "escalations": 3,
+    "eventCount": 101
+  },
+  {
+    "run": "run3b-seo",
+    "goalId": "goal-b0b822",
+    "finalStatus": "done",
+    "durationSec": 238,
+    "taskCount": 3,
+    "realTasks": 3,
+    "escalations": 4,
+    "eventCount": 104
+  }
+]
