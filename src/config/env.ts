@@ -35,6 +35,7 @@ export function loadEnv(): void {
 export interface Integration {
   id: string;
   label: string;              // plain-English name for the setup card
+  category?: string;          // setup-card grouping ("AI brains", "Commerce", ...)
   unlocks: string;            // what turns REAL when this is connected
   link: string;               // where the operator gets the credential
   hint?: string;              // one-line non-technical instruction
@@ -61,6 +62,7 @@ export const INTEGRATIONS: Integration[] = [
   {
     id: "resend",
     label: "Agent email identities (Resend)",
+    category: "Communications",
     unlocks: "Each hired agent gets a named company email identity — the root identity later setups build on. (Identity handle today; real outbound send is wired next, once your domain is verified.)",
     link: "https://resend.com/api-keys",
     hint: "Create a free account, add an API key. Connect your domain later for branded addresses.",
@@ -72,6 +74,7 @@ export const INTEGRATIONS: Integration[] = [
   {
     id: "brain-anthropic",
     label: "AI brain (Claude)",
+    category: "AI brains",
     unlocks: "Copywriter, strategist and analyst produce real AI output instead of canned text.",
     link: "https://console.anthropic.com/settings/keys",
     hint: "Create an API key and paste it here.",
@@ -83,6 +86,7 @@ export const INTEGRATIONS: Integration[] = [
   {
     id: "brain-nvidia",
     label: "AI brain (NVIDIA Nemotron)",
+    category: "AI brains",
     unlocks: "Same as the Claude brain, on the sponsor's Nemotron models (bounty track). Either brain works.",
     link: "https://build.nvidia.com",
     hint: "Sign in, generate an API key (starts with nvapi-).",
@@ -93,6 +97,7 @@ export const INTEGRATIONS: Integration[] = [
   {
     id: "brain-featherless",
     label: "AI brain (Featherless AI)",
+    category: "AI brains",
     unlocks: "Same as the other brains, on Featherless-hosted Nemotron models. When connected, workers prefer it automatically.",
     link: "https://featherless.ai",
     hint: "Sign in, create an API key. Hackathon usage tokens apply here.",
@@ -103,6 +108,7 @@ export const INTEGRATIONS: Integration[] = [
   {
     id: "shopify",
     label: "Shopify store",
+    category: "Commerce",
     unlocks: "The store-builder creates real products in YOUR store — the store link at the end becomes real.",
     link: "https://www.shopify.com/partners", // free dev store; admin token under Apps > Develop apps
     hint: "Already have a store? Paste its Admin API token. No store? Create a free dev store first — Settings > Apps > Develop apps > create app > Admin API token.",
@@ -114,6 +120,7 @@ export const INTEGRATIONS: Integration[] = [
   {
     id: "apify",
     label: "Live product research (Apify)",
+    category: "Research",
     unlocks: "Research scrapes real live products for your niche instead of a labeled sample catalog.",
     link: "https://console.apify.com/sign-up", // hackathon coupon: AITX_NVIDIA_CLAW_HACK
     hint: "Sign up (coupon AITX_NVIDIA_CLAW_HACK gives $50), copy your API token; actor e.g. junglee/amazon-crawler.",
@@ -124,6 +131,7 @@ export const INTEGRATIONS: Integration[] = [
   {
     id: "hiddenlayer",
     label: "AI security scanning (HiddenLayer)",
+    category: "Security",
     unlocks: "Authoritative threat scanning on everything agents read and write (on top of the built-in floor).",
     link: "https://hiddenlayer.com", // event code AITX-2026
     hint: "Use event code AITX-2026, create OAuth client credentials.",
@@ -150,6 +158,7 @@ export function setupStatus() {
     .map((i) => ({
       id: i.id,
       label: i.label,
+      category: i.category,
       unlocks: i.unlocks,
       link: i.link,
       hint: i.hint,

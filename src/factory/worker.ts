@@ -46,7 +46,7 @@ export function researchSourceLabel(): string {
   return "sample catalog matched to your niche (connect Apify in BUSINESS SETUP for a live scrape)";
 }
 
-async function fetchProducts(niche: string): Promise<any[]> {
+async function fetchProducts(niche: string): Promise<{ items: any[]; nicheMatched: boolean }> {
   const token = apifyToken(), actor = apifyActor();
   if (token && actor) {
     // Apify run-sync-get-dataset-items: runs the actor and returns its dataset.
@@ -58,25 +58,27 @@ async function fetchProducts(niche: string): Promise<any[]> {
       signal: AbortSignal.timeout(90000),
     });
     if (!res.ok) throw new Error(`Apify actor ${actor} failed: HTTP ${res.status} ${(await res.text()).slice(0, 150)}`);
-    return await res.json();
+    return { items: await res.json(), nicheMatched: true };
   }
   if (process.env.RESEARCH_SOURCE_URL) {
     const res = await fetch(process.env.RESEARCH_SOURCE_URL, { signal: AbortSignal.timeout(15000) });
     if (!res.ok) throw new Error(`source fetch failed: HTTP ${res.status}`);
     const data: any = await res.json();
-    return data.products ?? data.items ?? (Array.isArray(data) ? data : []);
+    return { items: data.products ?? data.items ?? (Array.isArray(data) ? data : []), nicheMatched: true };
   }
   // Sample catalog: search dummyjson by the niche terms so the findings are at
-  // least on-topic; fall back to a generic top-10 only if the search is empty.
+  // least on-topic. Run-1 learning (Atlas): when the search comes up EMPTY the
+  // generic top-10 fallback is OFF-topic (mascara for a planter store) — that
+  // must be said out loud, not laundered downstream as "niche-matched".
   const q = encodeURIComponent(niche.split(/\s+/).slice(0, 3).join(" "));
   const search = await fetch(`https://dummyjson.com/products/search?q=${q}&limit=10`, { signal: AbortSignal.timeout(15000) });
   if (search.ok) {
     const data: any = await search.json();
-    if (Array.isArray(data.products) && data.products.length > 0) return data.products;
+    if (Array.isArray(data.products) && data.products.length > 0) return { items: data.products, nicheMatched: true };
   }
   const res = await fetch("https://dummyjson.com/products?limit=10", { signal: AbortSignal.timeout(15000) });
   if (!res.ok) throw new Error(`sample catalog fetch failed: HTTP ${res.status}`);
-  return ((await res.json()) as any).products ?? [];
+  return { items: ((await res.json()) as any).products ?? [], nicheMatched: false };
 }
 
 let warnedBrain = "";
@@ -318,12 +320,18 @@ export async function runResearch(agent: AgentRecord, task: Task, niche: string,
   onProgress(10);
   bus.post({ threadId: task.goalId, from: agent.id, kind: "status", body: `Sourcing ${niche} products — ${researchSourceLabel()}` });
 
-  const rawProducts = await fetchProducts(niche);
+  const { items: rawProducts, nicheMatched } = await fetchProducts(niche);
   const products: Product[] = rawProducts.slice(0, 10).map((p) => ({
     title: p.title ?? p.name ?? p.productName ?? "unknown",
     price: Number(p.price?.value ?? p.price ?? p.priceValue ?? 0),
     image: p.thumbnail ?? p.image ?? p.imageUrl ?? p.images?.[0],
   }));
+  if (!nicheMatched) {
+    bus.post({
+      threadId: task.goalId, from: agent.id, kind: "status",
+      body: `Heads up: the sample catalog has no "${niche}" matches — the findings below use GENERAL sample data, not ${niche} products. Connect Apify in Connections for live ${niche} data.`,
+    });
+  }
   onProgress(50);
 
   // Handoff contract §4: an empty research result must NOT cross the edge
@@ -339,7 +347,8 @@ export async function runResearch(agent: AgentRecord, task: Task, niche: string,
   let summary: string | null = null;
   const brain = opts.brain ?? resolveBrain();
   if (brain) {
-    const prompt = `You are a retail research analyst. In 3 sentences, summarize the opportunity for a "${niche}" store given these products (title/price): ${products.map((p) => `${p.title} ($${p.price})`).join("; ")}. Be concrete about price band and which 3 products to lead with.`;
+    const mismatchNote = nicheMatched ? "" : ` IMPORTANT: the catalog had NO "${niche}" matches, so these are general sample products, NOT ${niche} items — say so plainly and base any ${niche}-specific advice on the price bands only.`;
+    const prompt = `You are a retail research analyst. In 3 sentences, summarize the opportunity for a "${niche}" store given these products (title/price): ${products.map((p) => `${p.title} ($${p.price})`).join("; ")}. Be concrete about price band and which 3 products to lead with.${mismatchNote}`;
     try {
       // Route model I/O through the shared seam (same scan→escalate order everywhere).
       summary = await dispatchModel(agent, task, prompt, { brain, maxTokens: 300 });
@@ -354,7 +363,7 @@ export async function runResearch(agent: AgentRecord, task: Task, niche: string,
   if (summary === null) {
     const sorted = [...products].sort((a, b) => a.price - b.price);
     const mid = sorted.slice(Math.floor(sorted.length / 3), Math.floor(sorted.length / 3) + 3);
-    summary = `${products.length} products from ${researchSourceLabel()}, $${sorted[0]?.price}–$${sorted[sorted.length - 1]?.price}. Rule-based synthesis (add a model key for LLM analysis). Lead with mid-band: ${mid.map((p) => `${p.title} ($${p.price})`).join(", ")}.`;
+    summary = `${products.length} products from ${researchSourceLabel()}${nicheMatched ? "" : ` (NO "${niche}" matches — general sample data)`}, $${sorted[0]?.price}–$${sorted[sorted.length - 1]?.price}. Rule-based synthesis (add a model key for LLM analysis). Lead with mid-band: ${mid.map((p) => `${p.title} ($${p.price})`).join(", ")}.`;
   }
   onProgress(90);
   bus.post({ threadId: task.goalId, from: agent.id, kind: "finding", body: `Research complete — ${summary}` });
