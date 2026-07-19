@@ -38,6 +38,7 @@ export interface AgentRecord {
   status: AgentStatus;
   parent: string;            // agent id that requested the spawn (usually the CEO)
   sandbox?: string;          // NemoClaw sandbox name
+  containment?: "nemoclaw" | "local";  // isolation mode: nemoclaw = contained, local = UNCONTAINED
   createdAt: string;
   updatedAt: string;
   lastHeartbeat?: string;

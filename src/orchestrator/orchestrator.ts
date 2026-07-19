@@ -29,7 +29,7 @@ interface PlannedRole {
   dependsOnIndex: number[]; // indices into the same plan array
 }
 
-class Orchestrator extends EventEmitter {
+export class Orchestrator extends EventEmitter {
   goals = new Map<string, Goal>();
   tasks = new Map<string, Task>();
   private ticker?: NodeJS.Timeout;

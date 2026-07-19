@@ -17,6 +17,7 @@ export async function createAgent(spec: AgentSpec, parentId: string): Promise<Ag
     identity: null as any, // set below
     status: "provisioning",
     parent: parentId,
+    containment: process.env.WORKER_MODE === "nemoclaw" ? "nemoclaw" : "local",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     log: [],
