@@ -701,10 +701,8 @@ export class Orchestrator extends EventEmitter {
       .filter((t) => t.goalId === task.goalId && t.dependsOn.includes(task.id))
       .map((t) => t.agentId)
       .filter(Boolean);
-    // C11: sim copy must tell the SAME story as the real path — counts come
-    // from the actual research output, never invented.
     const found = this.research.get(task.goalId)?.length ?? 0;
-    const built = Math.min(found || 3, 3); // real store-builder creates up to 3 products, 0 collections
+    const built = Math.min(found || 3, 3);
     switch (agent.spec.role) {
       case "research":
         return phase === "mid"
@@ -712,8 +710,8 @@ export class Orchestrator extends EventEmitter {
           : `Research complete — ${found || "a shortlist of"} products with prices, images and positioning posted to this thread${peers.length ? ` for ${peers.join(" & ")}` : ""}.`;
       case "store-builder":
         return phase === "mid"
-          ? `${Math.max(built - 1, 1)}/${built} products created; wiring images and variants now.`
-          : `Store populated: ${built} products, theme configured. Preview: https://agentcorp-dev.myshopify.com (simulated — connect Shopify in BUSINESS SETUP for a real build)`;
+          ? `${Math.max(built - 1, 1)}/${built} products created; wiring images and variants now. Collections: 0 (real builder creates products only).`
+          : `Store populated: ${built} products, 0 collections, theme configured. Preview: https://agentcorp-dev.myshopify.com (simulated — connect Shopify in BUSINESS SETUP for a real build)`;
       case "copywriter":
         return phase === "mid"
           ? `Brand voice locked; descriptions in progress for ${found || built} products.`
