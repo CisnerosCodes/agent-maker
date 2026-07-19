@@ -41,6 +41,7 @@ export interface AgentRecord {
   createdAt: string;
   updatedAt: string;
   lastHeartbeat?: string;
+  lastHandledStatus?: AgentStatus; // CEO heartbeat: last status the CEO reacted to
   log: AgentEvent[];
 }
 
