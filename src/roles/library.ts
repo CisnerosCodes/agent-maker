@@ -90,7 +90,7 @@ const research: RoleTemplate = {
   role: "research",
   titleFor: (c) => `Research: best-selling ${c.niche} products & competitors`,
   objectiveFor: (c) => `Find 10 trending ${c.niche} products with prices, images and competitor positioning`,
-  tools: ["apify", "web-fetch"],
+  tools: ["web-fetch"],
   credentials: [],
   policyTemplate: "worker-research.yaml",
   estimateSec: 28,

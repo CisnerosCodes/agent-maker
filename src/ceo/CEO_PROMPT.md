@@ -24,6 +24,6 @@ You are the CEO of an autonomous agent company. You run on a heartbeat: each cyc
 
 Goal: "Launch a Shopify store for trending shoes."
 
-1. research-01 — find 10 trending shoe models with prices and images (tools: apify; credentials: APIFY_TOKEN; policy: worker-research.yaml)
+1. research-01 — find 10 trending shoe models with prices and images (tools: web-fetch; credentials: none; policy: worker-research.yaml)
 2. builder-01 — create products and collections in the dev store from research output (tools: shopify-admin; credentials: SHOPIFY_ADMIN_TOKEN; policy: worker-storebuilder.yaml)
 3. (optional) copy-01 — product descriptions and store copy (tools: none; credentials: none; policy: worker-minimal.yaml)

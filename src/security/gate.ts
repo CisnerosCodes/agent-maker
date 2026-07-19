@@ -34,7 +34,11 @@ const FAIL_OPEN = process.env.HL_FAIL_OPEN === "1";
 
 const RANK: Record<Verdict, number> = { clean: 0, flagged: 1, blocked: 2 };
 const worse = (a: Verdict, b: Verdict): Verdict => (RANK[a] >= RANK[b] ? a : b);
-const heuristicVerdict = (categories: string[]): Verdict => (categories.length ? "flagged" : "clean");
+const heuristicVerdict = (categories: string[]): Verdict => {
+  if (categories.length === 0) return "clean";
+  if (categories.some((c) => c.includes("data_exfiltration") || c.includes("suspicious_endpoint"))) return "blocked";
+  return "flagged";
+};
 
 let warnedNoCreds = false;
 
