@@ -426,9 +426,20 @@ export async function runGenericRole(
 ): Promise<string> {
   onProgress(10);
   const artifact = agent.spec.handoff ?? "deliverable";
+  // 8000 chars/handoff (~2k tokens). The old 1800 cut a PRD mid-requirement
+  // and handed the qa-reviewer a build it could only see the CSS header of —
+  // observed live on the software-shipping chain. Budget is per-edge; a role
+  // with several upstreams still gets each artifact mostly whole. When an
+  // artifact exceeds the cap, SAY so in the prompt instead of cutting silently.
+  const HANDOFF_CAP = 8000;
   const sections = upstream
     .filter((u) => u.output)
-    .map((u) => `## Handoff from ${u.role}${u.handoff ? ` — ${u.handoff}` : ""}\n${u.output.slice(0, 1800)}`)
+    .map((u) => {
+      const body = u.output.length > HANDOFF_CAP
+        ? `${u.output.slice(0, HANDOFF_CAP)}\n[…handoff truncated at ${HANDOFF_CAP} chars — ${u.output.length - HANDOFF_CAP} more in the full artifact; flag in ANYTHING_UNCLEAR if the cut part matters]`
+        : u.output;
+      return `## Handoff from ${u.role}${u.handoff ? ` — ${u.handoff}` : ""}\n${body}`;
+    })
     .join("\n\n");
   const prompt = [
     `You are the ${agent.spec.role} in a small agent company. Your objective: ${agent.spec.objective}`,
@@ -445,7 +456,9 @@ export async function runGenericRole(
   let failNote = "no model key connected";
   if (brain) {
     try {
-      const out = await brain.complete(prompt, { model: modelFor(brain), levelId: "worker", trial: 1, maxTokens: 700 });
+      // High-reasoning roles (architect, product-manager…) produce structural
+      // artifacts that don't fit 700 tokens; builders even less so.
+      const out = await brain.complete(prompt, { model: modelFor(brain), levelId: "worker", trial: 1, maxTokens: agent.spec.reasoning === "low" ? 700 : 1600 });
       const trimmed = out.text.trim();
       if (trimmed) text = trimmed;
       else failNote = "model returned an empty response";

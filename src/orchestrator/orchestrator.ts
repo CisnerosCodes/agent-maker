@@ -677,7 +677,7 @@ export class Orchestrator extends EventEmitter {
             const spec = t.agentId ? registry.get(t.agentId)?.spec : undefined;
             const data = typeof t.outputData === "string"
               ? t.outputData
-              : t.outputData != null ? JSON.stringify(t.outputData).slice(0, 2000) : "";
+              : t.outputData != null ? JSON.stringify(t.outputData).slice(0, 8000) : "";
             const output = (t.output && t.output.length >= data.length ? t.output : data) || t.output || "";
             return { role: spec?.role ?? "upstream", handoff: spec?.handoff, output };
           });
