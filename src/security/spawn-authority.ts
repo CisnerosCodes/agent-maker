@@ -59,6 +59,73 @@ export const AUTHORITY_TABLE: Readonly<Record<string, RoleAuthority>> = Object.f
     policyTemplate: "worker-minimal.yaml",
     allowedTools: [],
   },
+  // Library roles landed after the original 5-row table (seo-optimization,
+  // customer-support, fact-check, software-shipping playbooks). Each row
+  // mirrors EXACTLY what the vetted library template declares — pure-LLM roles
+  // get nothing; fetch-assisted roles get web-fetch under the research egress
+  // policy. scripts/verify-spawn-wiring.ts asserts library/table consistency
+  // so the two can never drift apart silently again (a legit shipped playbook
+  // was refused wholesale when they did).
+  "keyword-miner": {
+    allowedCredentials: [],
+    policyTemplate: "worker-research.yaml",
+    allowedTools: ["web-fetch"],
+  },
+  "search-scout": {
+    allowedCredentials: [],
+    policyTemplate: "worker-research.yaml",
+    allowedTools: ["web-fetch"],
+  },
+  "listing-optimizer": {
+    allowedCredentials: [],
+    policyTemplate: "worker-minimal.yaml",
+    allowedTools: [],
+  },
+  "kb-curator": {
+    allowedCredentials: [],
+    policyTemplate: "worker-research.yaml",
+    allowedTools: ["web-fetch"],
+  },
+  "support-writer": {
+    allowedCredentials: [],
+    policyTemplate: "worker-minimal.yaml",
+    allowedTools: [],
+  },
+  "qa-auditor": {
+    allowedCredentials: [],
+    policyTemplate: "worker-minimal.yaml",
+    allowedTools: [],
+  },
+  critic: {
+    allowedCredentials: [],
+    policyTemplate: "worker-research.yaml",
+    allowedTools: ["web-fetch"],
+  },
+  reviser: {
+    allowedCredentials: [],
+    policyTemplate: "worker-minimal.yaml",
+    allowedTools: [],
+  },
+  "product-manager": {
+    allowedCredentials: [],
+    policyTemplate: "worker-minimal.yaml",
+    allowedTools: [],
+  },
+  architect: {
+    allowedCredentials: [],
+    policyTemplate: "worker-minimal.yaml",
+    allowedTools: [],
+  },
+  builder: {
+    allowedCredentials: [],
+    policyTemplate: "worker-minimal.yaml",
+    allowedTools: [],
+  },
+  "qa-reviewer": {
+    allowedCredentials: [],
+    policyTemplate: "worker-minimal.yaml",
+    allowedTools: [],
+  },
 });
 
 export interface SpawnDecision {
