@@ -7,19 +7,20 @@
   <link rel="icon" type="image/svg+xml" href="/logo.svg" />
   <link rel="stylesheet" href="/theme.css" />
   <style>
-    /* Obsidian theme (mockup 3a): same layout as ever, dark palette. */
+    /* Obsidian theme (mockup 3a), contrast-boosted: cards sit a clear step
+       above the page, body text passes AA on every surface. */
     :root {
       --paper: #0b0812;
-      --card: #120e1c;
-      --card-2: #161022;
-      --ink: #ece8f4;
-      --ink-dim: #a49bbd;
-      --ink-mute: #6e6488;
-      --line: #241d36;
-      --line-dark: #322a4a;
+      --card: #171126;
+      --card-2: #1f1834;
+      --ink: #f2eef9;
+      --ink-dim: #b8b0d0;
+      --ink-mute: #8a80ab;
+      --line: #2c2348;
+      --line-dark: #443a66;
       --accent: #8b5cf6;
-      --accent-ink: #c4b5fd;
-      --accent-soft: rgba(139, 92, 246, 0.16);
+      --accent-ink: #c9bcfe;
+      --accent-soft: rgba(139, 92, 246, 0.2);
       --green: #4cc38a;
       --green-soft: rgba(76, 195, 138, 0.12);
       --amber: #d9a441;
@@ -63,7 +64,7 @@
     /* ---------- shell ---------- */
     .shell { display: grid; grid-template-columns: 216px 1fr; min-height: 100vh; }
     .side {
-      background: #0e0a18; border-right: 1px solid var(--line);
+      background: #130d22; border-right: 1px solid var(--line);
       padding: 1.1rem 0.9rem; display: flex; flex-direction: column; gap: 0.2rem;
       position: sticky; top: 0; height: 100vh;
     }
@@ -117,7 +118,7 @@
     .scard .slabel { font-size: 0.72rem; color: var(--ink-mute); font-weight: 600; margin-bottom: 0.5rem; }
     .scard .big { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.01em; }
     .scard .big small { font-size: 0.78rem; color: var(--ink-mute); font-weight: 500; margin-left: 0.3rem; }
-    .pbar { height: 8px; border-radius: 5px; background: #1c1630; overflow: hidden; margin: 0.6rem 0 0.55rem; display: flex; }
+    .pbar { height: 8px; border-radius: 5px; background: #281f44; overflow: hidden; margin: 0.6rem 0 0.55rem; display: flex; }
     .pbar i { display: block; height: 100%; }
     .pbar .p-done { background: var(--green); }
     .pbar .p-working { background: var(--accent); }
@@ -160,7 +161,7 @@
     .aname .ceo-tag { font-family: var(--font-mono); font-size: 0.62rem; color: var(--honey); margin-left: 0.4rem; letter-spacing: 0.06em; }
     .arole { font-size: 0.72rem; color: var(--ink-mute); margin-top: 0.1rem; }
     .ttitle { color: var(--ink-dim); max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .tbar { height: 4px; border-radius: 3px; background: #1c1630; overflow: hidden; margin-top: 0.4rem; max-width: 220px; }
+    .tbar { height: 4px; border-radius: 3px; background: #281f44; overflow: hidden; margin-top: 0.4rem; max-width: 220px; }
     .tbar i { display: block; height: 100%; background: var(--accent); transition: width .6s ease; }
     .mode-real { font-family: var(--font-mono); font-size: 0.68rem; color: var(--green); font-weight: 600; letter-spacing: 0.04em; }
     .mode-sim { font-family: var(--font-mono); font-size: 0.68rem; color: var(--ink-mute); letter-spacing: 0.04em; }
@@ -239,7 +240,7 @@
 
     /* toasts — every button press gets visible feedback, success or failure */
     #toasts { position: fixed; bottom: 1.1rem; right: 1.1rem; z-index: 60; display: flex; flex-direction: column; gap: .5rem; max-width: min(380px, 90vw); }
-    .toast { background: #2a2140; color: var(--ink); border: 1px solid var(--line-dark); border-radius: 9px; padding: .6rem .9rem; font-size: .8rem; line-height: 1.45; box-shadow: var(--shadow); animation: toast-in .18s ease; }
+    .toast { background: #322752; color: var(--ink); border: 1px solid var(--line-dark); border-radius: 9px; padding: .6rem .9rem; font-size: .8rem; line-height: 1.45; box-shadow: var(--shadow); animation: toast-in .18s ease; }
     .toast.err { background: #47182b; border-color: var(--red); }
     .toast.ok { background: #123726; border-color: var(--green); }
     .toast .toast-fix { margin-top: .35rem; opacity: .92; }
@@ -361,8 +362,9 @@
       <button class="quiet" id="connClose">Close</button>
     </div>
     <div class="pbody">
-      <div class="conn-note">Connect your accounts so agents do the real thing — each key flips a SIM tag to REAL. Every key you save is immediately <b>live-tested against the provider</b>, so you know it actually works (not just that it is pasted). Keys are saved to your machine only (.env), never shown again, never sent to any model, and never appear in the channel. Full system check: <a href="/setup">/setup</a>.</div>
+      <div class="conn-note"><b>Step 2 of 3.</b> Connect your accounts so agents do the real thing — each key flips a SIM tag to REAL. Every key you save is immediately <b>live-tested against the provider</b>, so you know it actually works (not just that it is pasted). Keys are saved to your machine only (.env), never shown again, never sent to any model, and never appear in the channel.</div>
       <div id="setupRows"></div>
+      <div style="margin-top:1.1rem"><button class="primary" style="width:100%" onclick="location.href='/setup'">Next: run the setup check (step 3)</button></div>
     </div>
   </div>
 
@@ -376,7 +378,7 @@
   <div class="wizard-back" id="wizardBack"></div>
   <div class="wizard" id="wizard">
     <h2>Set up your company</h2>
-    <div class="sub">Two minutes. Your answers shape which agents get hired, what they build, and what they already know about your business.</div>
+    <div class="sub"><b>Step 1 of 3.</b> Two minutes. Your answers shape which agents get hired, what they build, and what they already know about your business. Next you'll connect accounts, then the system check verifies everything works.</div>
 
     <div class="q">What's your company or idea called?</div>
     <input type="text" id="wName" placeholder="e.g. Desk &amp; Co" />
@@ -866,12 +868,12 @@
       if (data.ok === false) return; // api() already toasted the error; keep the wizard open
       hasProfile = true;
       closeWizard();
-      if (pendingGoalText) {
-        // They typed a goal, we interrupted with the intake — launch it now.
-        const t = pendingGoalText; pendingGoalText = null;
-        $("goalInput").value = t;
-        launchGoal(t);
-      } else if (data.suggestedGoal) { $("goalInput").value = data.suggestedGoal; $("goalInput").focus(); }
+      // Guided flow: intake done -> connections next -> setup check -> launch.
+      // Their goal (typed or suggested) waits in the input for when they're back.
+      if (pendingGoalText) { $("goalInput").value = pendingGoalText; pendingGoalText = null; }
+      else if (data.suggestedGoal) { $("goalInput").value = data.suggestedGoal; }
+      toast("Team installed. Step 2: connect your accounts, then run the setup check.", "ok");
+      openPanel("connPanel", "connBack");
     };
     fetch("/api/company").then(r => r.json()).then(d => {
       hasProfile = !!d.profile;
@@ -882,10 +884,25 @@
     function renderAll() { renderDial(); renderPlans(); renderEscalations(); renderAsks(); renderLearning(); renderGoals(); renderSummary(); renderGrid(); renderChat(); renderSelectors(); if (openAgentId) renderDrawer(); }
 
     // --- actions ---
+    // Step-3 gate: the first launch asks the doctor (offline checks only) and
+    // blocks while anything is outright FAILING. Missing keys are warns, not
+    // fails — the keyless SIM demo still launches fine.
+    let setupOk = false;
     async function launchGoal(text) {
       const btn = $("goalBtn");
       btn.disabled = true; btn.textContent = "Launching…";
       try {
+        if (!setupOk) {
+          btn.textContent = "Checking setup…";
+          const rep = await api("/api/doctor?live=0", undefined, { quiet: true });
+          const fails = rep.summary?.fail ?? 0;
+          if (fails > 0) {
+            toast(`${fails} setup check${fails > 1 ? "s are" : " is"} failing — fix that first, then launch.`, "err",
+              { link: { href: "/setup", label: "Open the setup check — it names the exact fix" } });
+            return;
+          }
+          setupOk = true;
+        }
         const r = await api("/goal", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ text }) });
         if (r.ok !== false) {
           $("goalInput").value = "";

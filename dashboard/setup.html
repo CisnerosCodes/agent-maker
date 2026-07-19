@@ -9,8 +9,8 @@
   <style>
     /* Obsidian theme — matches Mission Control (mockup 3a). */
     :root {
-      --paper: #0b0812; --card: #120e1c; --ink: #ece8f4; --ink-dim: #a49bbd; --ink-mute: #6e6488;
-      --line: #241d36; --line-dark: #322a4a; --accent: #8b5cf6; --accent-ink: #c4b5fd; --accent-soft: rgba(139,92,246,.16);
+      --paper: #0b0812; --card: #171126; --ink: #f2eef9; --ink-dim: #b8b0d0; --ink-mute: #8a80ab;
+      --line: #2c2348; --line-dark: #443a66; --accent: #8b5cf6; --accent-ink: #c9bcfe; --accent-soft: rgba(139,92,246,.2);
       --green: #4cc38a; --green-soft: rgba(76,195,138,.1); --amber: #d9a441; --amber-soft: rgba(217,164,65,.1);
       --red: #e5688a; --red-soft: rgba(229,104,138,.1); --radius: 10px;
       --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 28px rgba(0,0,0,.35);
@@ -28,7 +28,7 @@
       background: var(--card); color: var(--ink); border: 1px solid var(--line-dark);
       border-radius: 8px; padding: .5rem 1rem; cursor: pointer;
     }
-    button:hover { background: #161022; }
+    button:hover { background: #1f1834; }
     button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
     button.primary:hover { background: #7c4ded; }
     button:disabled { opacity: .55; cursor: default; }
@@ -54,9 +54,9 @@
   <div class="wrap">
     <header><img src="/logo.svg" width="30" height="30" alt="" /><h1>Setup checklist</h1></header>
     <p class="sub">
-      This page tests your setup for real — not just "is a key pasted", but "does the key actually work
-      right now" (a live call to each connected provider). Green means go. Anything amber or red tells
-      you the exact fix. Nothing here ever shows or sends a key value.
+      <b>Step 3 of 3.</b> This page tests your setup for real — not just "is a key pasted", but "does the
+      key actually work right now" (a live call to each connected provider). Green means go. Anything
+      amber or red tells you the exact fix. Nothing here ever shows or sends a key value.
     </p>
     <div class="toolbar">
       <button class="primary" id="runBtn">Run all checks</button>
@@ -64,6 +64,11 @@
       <a href="/app" style="margin-left:auto">← Back to Mission Control</a>
     </div>
     <div class="verdict" id="verdict"></div>
+    <div id="readyCta" style="display:none; margin-bottom:1.2rem">
+      <button class="primary" style="width:100%; padding:.85rem" onclick="location.href='/app'">
+        Everything works — open Mission Control and try it out
+      </button>
+    </div>
     <div id="results"></div>
     <p class="footer-note">
       Same checks from a terminal: <code>npm run doctor</code> (before the dashboard is even running).<br />
@@ -90,6 +95,7 @@
 
     function renderPending() {
       $("verdict").style.display = "none";
+      $("readyCta").style.display = "none";
       $("results").innerHTML = GROUPS.map(([g, label]) => {
         const rows = PLACEHOLDERS.filter(p => p[0] === g);
         if (!rows.length) return "";
@@ -104,6 +110,8 @@
       v.style.display = "block";
       v.className = "verdict " + (report.summary.fail ? "bad" : report.summary.warn ? "warn" : "ok");
       v.textContent = report.summary.verdict;
+      // Step 3 of the guided flow: nothing failing -> hand them the door.
+      $("readyCta").style.display = report.summary.fail ? "none" : "block";
       $("results").innerHTML = GROUPS.map(([g, label]) => {
         const rows = report.checks.filter(c => c.group === g);
         if (!rows.length) return "";
