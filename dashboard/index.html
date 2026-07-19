@@ -776,6 +776,8 @@
       openAgentId = agentId;
       renderDrawer();
       openPanel("drawer", "drawerBack");
+      const a = state.agents.get(agentId);
+      loadPolicy(a?.spec?.role, agentId);
     }
     function closeDrawer() {
       openAgentId = null;
@@ -813,9 +815,38 @@
           </div>
           <div class="section">Event log</div>
           <div class="dlog">${(a.log ?? []).map(e => `<div>${e.ts.slice(11,19)} [${esc(e.kind)}] ${esc(e.message)}</div>`).join("")}</div>
+          <div class="section">OpenShell policy · tightening</div>
+          <div id="drawerPolicy" class="dlog">loading…</div>
           <div class="section">Spec · identity</div>
           <pre>${esc(JSON.stringify({ spec: a.spec, identity: a.identity, sandbox: a.sandbox, containment: a.containment }, null, 2))}</pre>
         </div>`;
+      // Policy loads async; if the drawer is a re-render (e.g. live update) keep it filled.
+      if (openAgentId) loadPolicy(a.spec?.role, a.id);
+    }
+
+    // Fetch the worker role's OpenShell YAML + the deny rules the tightening loop
+    // learned for it, and render both into the drawer. The CEO is not a sandboxed
+    // worker, so it shows n/a rather than a misleading fallback policy.
+    async function loadPolicy(role, agentId) {
+      const el = document.getElementById("drawerPolicy");
+      if (!el) return;
+      if (!role || role === "ceo") {
+        el.innerHTML = '<div class="d">n/a — the CEO is the operator, not a sandboxed worker.</div>';
+        return;
+      }
+      let p;
+      try {
+        p = await api("/api/policy?role=" + encodeURIComponent(role), undefined, { quiet: true });
+      } catch { if (openAgentId === agentId) el.innerHTML = '<div class="d">failed to load policy</div>'; return; }
+      if (openAgentId !== agentId) return; // drawer switched while we were fetching
+      const rows = p.tightening ?? [];
+      const hist = rows.length
+        ? rows.map(r => `<div>${esc((r.ts || "").slice(0, 19).replace("T", " "))} <b>${r.applied ? "+ " : "(escalated) "}${esc(r.direction)} ${esc(r.target)}</b><span class="d"> · ${esc(r.detector)}${r.revision != null ? " · rev " + esc(r.revision) : ""}</span></div>`).join("")
+        : '<div class="d">no learned rules yet — the boundary is the base policy above</div>';
+      el.innerHTML =
+        `<div class="stat-line">${esc(p.file || "no policy file for this role")} · ${rows.length} tightening row(s)</div>`
+        + `<pre>${esc(p.yaml || "(policy file not found)")}</pre>`
+        + `<div class="section">Tightening history</div>${hist}`;
     }
 
     async function sendDrawerMsg(agentId) {
