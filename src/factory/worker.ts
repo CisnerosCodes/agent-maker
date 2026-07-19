@@ -26,7 +26,7 @@ import { escalations } from "../security/escalations.js";
 import { governance } from "../governance/governance.js";
 import { registry } from "../registry/registry.js";
 import { bus } from "../bus/bus.js";
-import { milestoneFor, renderUpstream, type OutputSchema, type PlanContext, type RoleTemplate } from "../roles/library.js";
+import { executionClassOf, milestoneFor, renderUpstream, type OutputSchema, type PlanContext, type RoleTemplate } from "../roles/library.js";
 import { friendlyError } from "../config/errors.js";
 
 export interface Product { title: string; price: number; image?: string }
@@ -106,15 +106,18 @@ export function resolveBrain(): ModelBackend | null {
 }
 
 export function workerMode(role: string): "real" | "sim" {
-  if (process.env.SIM_MODE === "1") return "sim"; // offline stage insurance — EVERYTHING sim
-  if (role === "research") return "real"; // real keyless fetch, honestly labeled — even in demo mode
-  if (simForced()) return "sim"; // COMPANY_MODE=demo: no key spend, no business writes
-  if (role === "store-builder") return process.env.SHOPIFY_ADMIN_TOKEN && process.env.SHOPIFY_STORE_URL ? "real" : "sim";
-  if (role === "copywriter") return resolveBrain() ? "real" : "sim";
-  // Every other library role (strategist, analyst, product-manager, architect,
-  // builder, qa-reviewer, keyword-miner…) runs the generic brain-backed
-  // artifact turn (runGenericRole) when a brain key exists; labeled sim otherwise.
-  return resolveBrain() ? "real" : "sim";
+  if (process.env.SIM_MODE === "1") return "sim";
+  switch (executionClassOf(role)) {
+    case "broker-ingest":
+      return "real";
+    case "tool-workflow":
+      return process.env.SHOPIFY_ADMIN_TOKEN && process.env.SHOPIFY_STORE_URL ? "real" : "sim";
+    case "pure-LLM":
+      return resolveBrain() ? "real" : "sim";
+    default:
+      return "sim";
+  }
+}
 }
 
 // Gate helper: scan content; flagged -> escalate and await the human. Returns
