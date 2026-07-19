@@ -105,6 +105,32 @@ async function main(): Promise<void> {
   );
   check("legit goal not marked failed by the gate", legitGoal.status !== "failed");
 
+  // --- CONSISTENCY: every shipped library role must pass the broker -----------
+  // The table and the library drifted once (software-shipping etc. landed
+  // without table rows) and the broker refused a legit playbook wholesale.
+  // This guard fails the build the moment a new library role lacks a row.
+  console.log("\n  Library/table consistency — every playbook role validates:");
+  const { PLAYBOOKS } = await import("../src/roles/library.js");
+  const { validateSpawn } = await import("../src/security/spawn-authority.js");
+  const ctx = { goalText: "verify", niche: "verify", idSuffix: "v" };
+  const seen = new Set<string>();
+  let drifted = 0;
+  for (const pb of PLAYBOOKS) {
+    for (const t of pb.roles) {
+      if (seen.has(t.role)) continue;
+      seen.add(t.role);
+      const decision = validateSpawn({
+        role: t.role, name: `${t.role}-v`, objective: t.objectiveFor(ctx),
+        tools: t.tools, credentials: t.credentials, policyTemplate: t.policyTemplate,
+      });
+      if (!decision.allowed) {
+        drifted++;
+        console.log(`    DRIFT ${t.role} (${pb.id}): ${decision.reason}`);
+      }
+    }
+  }
+  check(`all ${seen.size} distinct library roles pass the spawn-authority table`, drifted === 0, drifted ? `${drifted} drifted` : "");
+
   registry.clear();
   setDenyLogger((line) => console.warn(`[spawn-authority] ${line}`)); // restore
   console.log(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}`);
