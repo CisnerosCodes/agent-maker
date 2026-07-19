@@ -10,7 +10,8 @@ import type { AgentRecord, AgentSpec, AgentStatus, BusMessage, Goal, PlanApprova
 import { governance } from "../governance/governance.js";
 import { bus } from "../bus/bus.js";
 import { registry } from "../registry/registry.js";
-import { createAgent } from "../factory/factory.js";
+import { createAgent, endAgentSession, terminateAgent } from "../factory/factory.js";
+import { clearRevocations } from "../vault/vault.js";
 import { validateSpawn, type SpawnDecision } from "../security/spawn-authority.js";
 import { workerMode, runResearch, runStoreBuilder, runCopywriter, runGenericRole, gateOrEscalate, type Product } from "../factory/worker.js";
 import { escalations } from "../security/escalations.js";
@@ -124,16 +125,21 @@ export class Orchestrator extends EventEmitter {
   // --- goal intake ---
 
   async startGoal(text: string) {
-    // C16: guard against second concurrent goal
-    if (this.anyActiveGoal()) {
+    this.ensureCeo();
+
+    // Concurrency refusal (factory-provisioning §6, C16): one company, one job at
+    // a time for the demo. A second goal would spawn a second agent record per
+    // role sharing ONE per-role sandbox + niche-keyed run memory — a live race on
+    // shared state, on stage. Refuse honestly and keep the active goal running.
+    const active = [...this.goals.values()].find((g) => g.status === "clarifying" || g.status === "planning" || g.status === "awaiting-approval" || g.status === "running");
+    if (active) {
       bus.post({
         threadId: "company", from: "ceo", kind: "chat",
-        body: "One company, one job at a time for this demo. Finish or reset the current goal first.",
+        body: `Let me finish the current goal first — one company, one job at a time for this demo. I'm still on "${active.text.slice(0, 80)}". Ask again once it wraps and I'll staff the next one.`,
       });
-      return { id: "", text, status: "rejected" as const, threadId: "company", createdAt: new Date().toISOString() };
+      return active;
     }
 
-    this.ensureCeo();
     const id = `goal-${randomUUID().slice(0, 6)}`;
     const goal: Goal = { id, text, status: "planning", threadId: id, createdAt: new Date().toISOString() };
     this.goals.set(id, goal);
@@ -337,14 +343,17 @@ export class Orchestrator extends EventEmitter {
 
     const taskIds: string[] = [];
     for (const role of roles) {
+      // Mint the task id FIRST so the Factory can key the sandbox session on it
+      // (factory-provisioning §2: session == taskId, isolated per-task workdir).
+      const taskId = `task-${randomUUID().slice(0, 6)}`;
       // Every role.spec reaching here passed the spawn-authority broker
       // (authorizeRoles, at the top of plan()) — createAgent never runs on an
       // out-of-authority spec.
-      const record = await createAgent(role.spec, CEO_ID);
+      const record = await createAgent(role.spec, CEO_ID, taskId);
       if (role.spec.role === "research") this.lastResearchId = record.id;
       const mode = workerMode(role.spec.role);
       const task: Task = {
-        id: `task-${randomUUID().slice(0, 6)}`,
+        id: taskId,
         goalId: goal.id,
         title: role.title,
         agentId: record.id,
@@ -355,9 +364,19 @@ export class Orchestrator extends EventEmitter {
         mode,
       };
       taskIds.push(task.id);
+      // Honest provisioning failure (factory-provisioning §4): a vault miss or an
+      // unhealthy sandbox returns a `failed` record instead of throwing. Fail the
+      // task so the tick() cascade + maybeFinishGoal halt the goal — do NOT
+      // overwrite it back to `waiting`, and do NOT crash the hire loop (other
+      // agents still provision).
+      if (record.status === "failed") {
+        task.status = "failed";
+        task.finishedAt = new Date().toISOString();
+        bus.post({ threadId: goal.id, from: "ceo", kind: "system", body: `Could not provision ${role.spec.name} — ${record.log[record.log.length - 1]?.message ?? "provisioning failed"}. Skipping; the goal will halt if this agent was required.` });
+      }
       this.tasks.set(task.id, task);
       this.emitTask(task);
-      if (task.dependsOn.length > 0) {
+      if (record.status !== "failed" && task.dependsOn.length > 0) {
         record.status = "waiting";
         registry.upsert(record, `Waiting on ${task.dependsOn.length} upstream task(s)`);
       }
@@ -545,8 +564,9 @@ export class Orchestrator extends EventEmitter {
           task.finishedAt = new Date().toISOString();
           const agent = task.agentId ? registry.get(task.agentId) : undefined;
           if (agent) {
-            agent.status = "terminated";
-            registry.upsert(agent, "Skipped — an upstream task failed, nothing to build on");
+            // Terminate = session workdir wiped + identity revoked (§5), not just
+            // a status flip, so a skipped agent leaves no session data behind.
+            terminateAgent(agent, "Skipped — an upstream task failed, nothing to build on");
             bus.post({ threadId: task.goalId, from: agent.id, kind: "system", body: `Skipping "${task.title}" — the task I depend on failed.` });
           }
           this.emitTask(task);
@@ -631,6 +651,7 @@ export class Orchestrator extends EventEmitter {
       task.finishedAt = new Date().toISOString();
       agent.status = "failed";
       const human = friendlyError(err.message);
+      endAgentSession(agent); // §3: wipe the session workdir on failure
       registry.upsert(agent, `Task failed: ${human}`);
       bus.post({ threadId: task.goalId, from: agent.id, kind: "system", body: `Task failed: ${human}` });
       this.emitTask(task);
@@ -645,6 +666,7 @@ export class Orchestrator extends EventEmitter {
     task.status = "done";
     task.finishedAt = new Date().toISOString();
     agent.status = "done";
+    endAgentSession(agent); // §3: wipe the session workdir on completion
     registry.upsert(agent, `Task complete: ${task.title}`);
     this.emitTask(task);
     this.maybeFinishGoal(task.goalId);
@@ -665,6 +687,7 @@ export class Orchestrator extends EventEmitter {
       task.finishedAt = new Date().toISOString();
       if (agent) {
         agent.status = "done";
+        endAgentSession(agent); // §3: wipe the session workdir on completion
         registry.upsert(agent, `Task complete: ${task.title}`);
         bus.post({ threadId: task.goalId, from: agent.id, kind: "finding", body: this.milestoneMsg(agent, task, "done") });
       }
@@ -781,6 +804,7 @@ export class Orchestrator extends EventEmitter {
     this.planResolvers.clear();
     this.lastResearchId = undefined;
     escalations.clear();
+    clearRevocations(); // fresh identity-revocation ledger each demo
     if (wipeMemory) runMemory.clear();
     // Full reset re-runs onboarding: the intake questions (niche, what you
     // already have, starter team) are part of every fresh demo, not one-time
@@ -803,8 +827,9 @@ export class Orchestrator extends EventEmitter {
         continue;
       }
       if (inFlight.has(agent.status) && ![...this.tasks.values()].some((t) => t.agentId === agent.id && (t.status === "pending" || t.status === "running"))) {
-        agent.status = "terminated";
-        registry.upsert(agent, "Server restarted — this agent's task did not survive; hire again with a new goal");
+        // Stale in-flight record from a prior process: terminate it (wipe session
+        // workdir + revoke identity, §5) rather than leave a zombie row.
+        terminateAgent(agent, "Server restarted — this agent's task did not survive; hire again with a new goal");
       }
     }
   }

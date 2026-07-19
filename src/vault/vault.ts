@@ -10,6 +10,15 @@ import type { AgentIdentity, AgentSpec } from "../types.js";
 
 const DOMAIN = process.env.AGENT_EMAIL_DOMAIN ?? "agentcorp.dev";
 
+// The "REVOCABLE" half of the vault philosophy (factory-provisioning §5). An
+// identity's issued credential refs are marked revoked here; the Factory pairs
+// this with a session-workdir wipe to deliver a demonstrable "revoked" — the
+// grain that carries the agent's authority to continue. Post-hackathon this
+// becomes real credential rotation + sandbox teardown; for the demo, marking the
+// identity revoked (so `isRevoked` reports true and a re-issue is required) is the
+// honest, testable version of the claim.
+const revoked = new Set<string>();
+
 // Map credential names -> env var refs. Raw secrets NEVER enter the registry;
 // workers get them injected into their sandbox env by the Factory only.
 const CREDENTIAL_STORE: Record<string, string> = {
@@ -30,6 +39,26 @@ export async function issueIdentity(spec: AgentSpec): Promise<AgentIdentity> {
     issuedCredentials: issued,
     issuedAt: new Date().toISOString(),
   };
+}
+
+// Revoke an issued identity (factory-provisioning §5). Idempotent; keyed by email
+// (the stable identity handle). Returns true if this call flipped it from live to
+// revoked, false if it was already revoked or the identity is absent. Never throws
+// — a terminate path must not crash the CEO.
+export function revokeIdentity(identity?: AgentIdentity): boolean {
+  if (!identity?.email) return false;
+  if (revoked.has(identity.email)) return false;
+  revoked.add(identity.email);
+  return true;
+}
+
+export function isRevoked(identity?: AgentIdentity): boolean {
+  return identity?.email ? revoked.has(identity.email) : false;
+}
+
+// Test/reset seam: clear the revocation ledger (orchestrator.reset / verify).
+export function clearRevocations(): void {
+  revoked.clear();
 }
 
 export async function sendAsAgent(from: string, to: string, subject: string, text: string) {
