@@ -13,14 +13,14 @@ import { registry } from "../registry/registry.js";
 import { createAgent, endAgentSession, terminateAgent } from "../factory/factory.js";
 import { clearRevocations } from "../vault/vault.js";
 import { validateSpawn, type SpawnDecision } from "../security/spawn-authority.js";
-import { workerMode, executeRole, gateOrEscalate, resolveBrain, type Product } from "../factory/worker.js";
+import { workerMode, resolveBrain, runResearch, runStoreBuilder, runCopywriter, runGenericRole, gateOrEscalate, type Product } from "../factory/worker.js";
 import { escalations } from "../security/escalations.js";
 import { runMemory, type RunRecord } from "../memory/runs.js";
 import { missingFor } from "../config/env.js";
 import { companyProfile, clearCompanyProfile } from "../config/company.js";
 import { friendlyError } from "../config/errors.js";
 import { modeStatus } from "../config/mode.js";
-import { matchPlaybook, milestoneFor, roleTemplateFor, renderUpstream, type PlanContext } from "../roles/library.js";
+import { matchPlaybook, milestoneFor } from "../roles/library.js";
 import { nicheFor } from "../config/niche.js";
 
 const CEO_ID = "ceo-01";
@@ -149,6 +149,7 @@ export class Orchestrator extends EventEmitter {
       this.emitGoal(goal);
       return goal;
     }
+
     // Concurrency refusal (factory-provisioning §6, C16): one company, one job at
     // a time for the demo. A second goal would spawn a second agent record per
     // role sharing ONE per-role sandbox + niche-keyed run memory — a live race on
@@ -647,15 +648,42 @@ export class Orchestrator extends EventEmitter {
     const onProgress = (p: number) => { task.progress = Math.max(task.progress, Math.min(99, p)); this.emitTask(task); };
     try {
       const niche = this.niche.get(task.goalId) ?? "the target market";
-      const tmpl = roleTemplateFor(agent.spec.role);
-      if (!tmpl) throw new Error(`No role template for ${agent.spec.role}`);
-      const ctx: PlanContext = { goalText: this.goals.get(task.goalId)?.text ?? "", niche, idSuffix: task.goalId.slice(5) };
-      const upstream = task.dependsOn.length > 0
-        ? this.tasks.get(task.dependsOn[0])?.outputData ?? null
-        : null;
-      const output = await executeRole(agent, task, tmpl, ctx, upstream, onProgress);
-      task.outputData = output;
-      task.output = typeof output === "string" ? output : JSON.stringify(output).slice(0, 200);
+      if (agent.spec.role === "research") {
+        const prior = this.recalled.get(task.goalId);
+        let products: Product[];
+        if (prior) {
+          // Reuse path: cite prior run, no re-scrape. This is the speedup.
+          products = prior.products;
+          onProgress(60);
+          bus.post({ threadId: task.goalId, from: agent.id, kind: "finding", body: `Reusing ${products.length} products from ${prior.runId} — no re-scrape needed. Prior lead picks still valid.` });
+        } else {
+          products = await runResearch(agent, task, niche, onProgress);
+        }
+        this.research.set(task.goalId, products);
+        task.outputData = products;
+        task.output = prior ? `${products.length} products (reused ${prior.runId})` : `${products.length} products`;
+      } else if (agent.spec.role === "store-builder") {
+        const url = await runStoreBuilder(agent, task, this.research.get(task.goalId) ?? [], onProgress);
+        task.output = url;
+      } else if (agent.spec.role === "copywriter") {
+        task.output = await runCopywriter(agent, task, niche, this.research.get(task.goalId) ?? [], onProgress);
+      } else {
+        // Any other library role: generic gated artifact turn. Upstream task
+        // outputs travel as named handoff sections (MetaGPT SOP-style).
+        const upstream = task.dependsOn
+          .map((d) => this.tasks.get(d))
+          .filter((t): t is Task => Boolean(t))
+          .map((t) => {
+            const spec = t.agentId ? registry.get(t.agentId)?.spec : undefined;
+            const data = typeof t.outputData === "string"
+              ? t.outputData
+              : t.outputData != null ? JSON.stringify(t.outputData).slice(0, 8000) : "";
+            const output = (t.output && t.output.length >= data.length ? t.output : data) || t.output || "";
+            return { role: spec?.role ?? "upstream", handoff: spec?.handoff, output };
+          });
+        task.output = await runGenericRole(agent, task, niche, upstream, onProgress);
+        task.outputData = task.output;
+      }
       this.completeTask(task, agent, "done");
     } catch (err: any) {
       task.status = "failed";
