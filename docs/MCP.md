@@ -1,6 +1,6 @@
 # Connect your own agent (MCP)
 
-Agent-Maker ships an MCP server so you don't have to learn our product — **your AI does**.
+Claw Colony ships an MCP server so you don't have to learn our product — **your AI does**.
 Point Claude (or any MCP-capable agent) at it and say *"set me up"*: it will onboard your
 company, hand you your dashboard link, launch goals, watch the org live, explain every
 security escalation in plain language, and guide business setup step by step.

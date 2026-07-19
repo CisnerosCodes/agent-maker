@@ -1,4 +1,4 @@
-# Agent-Maker — Implementation Plan
+# Claw Colony — Implementation Plan
 
 **One doc, prioritized, for humans + Claude to execute from once the planning flag lifts.**
 

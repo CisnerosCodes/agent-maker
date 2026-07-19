@@ -108,10 +108,26 @@ export function compile(signals: CapturedSignal[], role: string): TighteningRule
 //   else                           → apply
 export function conflictCheck(rule: TighteningRule): "apply" | "escalate" | "reject" {
   if (rule.direction !== "deny") return "reject";
-  if (rule.kind === "deny_host" && loadAllowlistHosts(rule.role).has(rule.target)) {
+  // Compare the HOST portion — a deny_host target is host[:port], but the
+  // allowlist YAML lists bare hosts.
+  if (rule.kind === "deny_host" && loadAllowlistHosts(rule.role).has(hostPart(rule.target))) {
     return "escalate";
   }
   return "apply";
+}
+
+const hostPart = (target: string): string => target.replace(/:\d+$/, "");
+
+// OpenShell 0.0.72 `--add-deny` grammar is `host:port:METHOD:path_glob` and the
+// port MUST be a literal integer (verified against the CLI — a bare host or a
+// `*` port is rejected). A deny_host target is `host[:port]`; expand it to deny
+// ALL methods and paths on that endpoint, defaulting to 443 (exfil is https)
+// when the caller didn't carry a port. deny_path is filesystem-scoped and never
+// shipped through this network flag, so it passes through unchanged.
+function addDenyArg(rule: TighteningRule): string {
+  if (rule.kind !== "deny_host") return rule.target;
+  const endpoint = /:\d+$/.test(rule.target) ? rule.target : `${rule.target}:443`;
+  return `${endpoint}:*:**`;
 }
 
 // Union of network_policies.*.endpoints[].host across the role's worker YAML.
@@ -152,7 +168,7 @@ export async function applyRule(rule: TighteningRule): Promise<ApplyResult> {
     return { ok: false, revision: null, exitCode: null, error: `refused non-deny direction: ${rule.direction}` };
   }
   const res = await runOpenshell(
-    ["policy", "update", rule.role, "--add-deny", rule.target, "--wait"],
+    ["policy", "update", rule.role, "--add-deny", addDenyArg(rule), "--wait"],
     APPLY_TIMEOUT_MS,
   );
   if (res.timedOut) return { ok: false, revision: null, exitCode: 124, error: "policy update timed out" };
@@ -177,7 +193,7 @@ function parseRevision(stdout: string): number | null {
 // NEVER combined with --wait (§4.5): dry-run for the visual, real run to apply.
 export async function renderDiff(rule: TighteningRule): Promise<string> {
   const res = await runOpenshell(
-    ["policy", "update", rule.role, "--add-deny", rule.target, "--dry-run"],
+    ["policy", "update", rule.role, "--add-deny", addDenyArg(rule), "--dry-run"],
     READ_TIMEOUT_MS,
   );
   const merged = res.stdout.trim();

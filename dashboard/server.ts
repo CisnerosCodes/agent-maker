@@ -18,6 +18,8 @@ import { runDoctor } from "../src/config/doctor.js";
 import { brainPoolStatus, resetHealthForKey } from "../src/providers/pool.js";
 import { modeStatus } from "../src/config/mode.js";
 import { companyProfile, saveCompanyProfile, suggestedFirstGoal, STARTER_PACKS } from "../src/config/company.js";
+import { readLog } from "../src/security/tightening-log.js";
+import { nemoclawEvents } from "../src/worker/nemoclaw.js";
 
 const PORT = Number(process.env.DASHBOARD_PORT ?? 4000);
 const EVALS_DIR = process.env.EVALS_DIR ?? "./data/evals";
@@ -39,6 +41,9 @@ orchestrator.on("run", (run) => broadcast("run", run));
 orchestrator.on("planApproval", (p) => broadcast("planApproval", p));
 escalations.on("escalation", (esc) => broadcast("escalation", esc));
 governance.on("change", (mode) => broadcast("autonomy", { mode }));
+// Policy-tightening loop landed a learned deny rule — push it live so the agent
+// drawer's policy view updates without a refresh (the "gets safer" moment).
+nemoclawEvents.on("tightening", (evt) => broadcast("tightening", evt));
 
 // SecurityGate on the bus: a passive "gate is watching" signal on inter-agent
 // traffic. HEURISTICS ONLY here (C3) — the authoritative HiddenLayer scan runs
@@ -78,6 +83,26 @@ function evalRuns(): unknown[] {
     .reverse()
     .slice(0, 20)
     .map((f) => JSON.parse(readFileSync(join(EVALS_DIR, f), "utf8")));
+}
+
+const POLICIES_DIR = process.env.POLICIES_DIR ?? "./policies";
+
+// Role -> its OpenShell policy YAML + the tightening-log rows that hardened it.
+// Judge-facing: this is how the base boundary AND every learned deny rule become
+// visible on the SITE, not just via the CLI. Filename convention mirrors
+// tightening.ts policyFile(): worker-<role>.yaml, then the collapsed form, then
+// the shared minimal policy as a safe fallback. Role is sanitized to a
+// [a-z0-9-] whitelist so a crafted ?role= can never traverse the filesystem.
+function policyFor(role: string): { role: string; file: string | null; yaml: string; tightening: unknown[] } {
+  const safe = role.toLowerCase().replace(/[^a-z0-9-]/g, "");
+  const candidates = [`worker-${safe}.yaml`, `worker-${safe.replace(/-/g, "")}.yaml`, "worker-minimal.yaml"];
+  for (const name of candidates) {
+    const path = join(POLICIES_DIR, name);
+    if (existsSync(path)) {
+      return { role: safe, file: name, yaml: readFileSync(path, "utf8"), tightening: readLog(safe) };
+    }
+  }
+  return { role: safe, file: null, yaml: "", tightening: readLog(safe) };
 }
 
 function body(req: IncomingMessage): Promise<any> {
@@ -162,6 +187,11 @@ createServer(async (req, res) => {
       res.end(readFileSync(new URL("./evals.html", import.meta.url)));
     } else if (req.url === "/api/eval-runs") {
       json(res, evalRuns());
+    } else if (req.url?.startsWith("/api/policy") && req.method === "GET") {
+      // The OpenShell boundary for a worker role + its tightening history, so a
+      // judge can read the policy (and every learned deny rule) from the site.
+      const role = new URL(req.url, "http://localhost").searchParams.get("role") ?? "minimal";
+      json(res, policyFor(role));
     } else if (req.url === "/api/company" && req.method === "GET") {
       json(res, { profile: companyProfile(), packs: STARTER_PACKS, suggestedGoal: suggestedFirstGoal() });
     } else if (req.url === "/api/company" && req.method === "POST") {

@@ -1,4 +1,4 @@
-# OIE Run — Topic: "What makes agent-maker win this hackathon?"
+# OIE Run — Topic: "What makes Claw Colony win this hackathon?"
 
 Ran the Orthogonal Innovation Engine protocol against the project itself, not a
 market. Same discipline: evidence before ideation, arithmetic kill gates,
@@ -49,7 +49,7 @@ Name the obvious so we can avoid it.
 - GW2 — "we blocked a prompt injection" one-shot demo. Every security-track team has this.
 - GW3 — a slick org chart with progress bars. Presentation, not substance.
 
-agent-maker already sits partly outside GW1 (role library, issued identity). The
+Claw Colony already sits partly outside GW1 (role library, issued identity). The
 ideas below push it fully orthogonal to all three.
 
 ---

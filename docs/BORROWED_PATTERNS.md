@@ -1,4 +1,4 @@
-# Borrowed Patterns — external resources applied to Agent-Maker
+# Borrowed Patterns — external resources applied to Claw Colony
 
 Written July 18 after a research pass over ten agent-ecosystem resources.
 What was lifted, from where, under what license, and what was deliberately
