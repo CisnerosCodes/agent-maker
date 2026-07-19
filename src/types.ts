@@ -36,10 +36,23 @@ export interface AgentIdentity {
 export interface AgentRecord {
   id: string;
   spec: AgentSpec;
-  identity: AgentIdentity;
+  // Optional (C12): a record exists in `provisioning`/`failed` BEFORE identity is
+  // issued. A vault miss leaves this undefined + status `failed` — never
+  // `null as any`, never a crash into the CEO loop. Consumers use `?.`.
+  identity?: AgentIdentity;
   status: AgentStatus;
   parent: string;            // agent id that requested the spawn (usually the CEO)
-  sandbox?: string;          // NemoClaw sandbox name
+  sandbox?: string;          // per-ROLE NemoClaw sandbox name (== role; reused across hires)
+  // Per-TASK session inside the role sandbox (factory-provisioning §2). The real
+  // per-hire unit: an agent record + a task session. `session` is the id passed to
+  // nemoclaw dispatch (--session-id); `workdir` is its isolated, wiped-on-end
+  // workdir (§3, `/workspace/<session>/`) so goal-1 data cannot contaminate goal-2.
+  session?: string;
+  workdir?: string;
+  // Isolation axis (C6), orthogonal to real/sim. `nemoclaw` = provisioned in an
+  // OpenShell sandbox; `local` = in-process, UNCONTAINED (break-glass / no live
+  // sandbox). Surfaced as an UNCONTAINED badge when `local`.
+  containment?: "nemoclaw" | "local";
   createdAt: string;
   updatedAt: string;
   lastHeartbeat?: string;
