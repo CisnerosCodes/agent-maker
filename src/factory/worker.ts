@@ -136,6 +136,11 @@ export async function gateOrEscalate(agent: AgentRecord, content: string, kind: 
   if (governance.autoApprovesFlagged(result.verdict)) {
     registry.upsert(agent, `Auto-approved (autonomous mode): ${reason} [${result.categories.join(", ")}]`);
     bus.post({ threadId, from: agent.id, kind: "status", body: `Detection auto-approved in autonomous mode — logged, not stopped [${result.categories.join(", ")}]. (Critical exfil would still hard-block.)` });
+    // Run-2 learning (Nova): auto-approvals were invisible to the escalations
+    // audit trail (only nested agent logs). Record one, pre-resolved, so
+    // after-the-fact review sees every detection decision in ONE place.
+    const { escalation } = escalations.create(agent.id, `[auto-approved in autonomous mode] ${reason}`, result, content);
+    escalations.resolve(escalation.id, "approved");
     return true;
   }
   const prev = agent.status;
