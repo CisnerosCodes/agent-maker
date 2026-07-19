@@ -6,7 +6,7 @@
 
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import type { AgentRecord, AgentSpec, BusMessage, Goal, PlanApproval, Task } from "../types.js";
+import type { AgentRecord, AgentSpec, AgentStatus, BusMessage, Goal, PlanApproval, Task } from "../types.js";
 import { governance } from "../governance/governance.js";
 import { bus } from "../bus/bus.js";
 import { registry } from "../registry/registry.js";
@@ -22,6 +22,9 @@ import { matchPlaybook, milestoneFor } from "../roles/library.js";
 
 const CEO_ID = "ceo-01";
 const TICK_MS = 1200;
+// CEO heartbeat: slower, separate clock that stays alive while ANY goal is active
+// (not just active tasks). Reacts to blocked/failed/done transitions.
+const HEARTBEAT_MS = 5000;
 
 interface PlannedRole {
   spec: AgentSpec;
@@ -34,6 +37,8 @@ class Orchestrator extends EventEmitter {
   goals = new Map<string, Goal>();
   tasks = new Map<string, Task>();
   private ticker?: NodeJS.Timeout;
+  private heartbeat?: NodeJS.Timeout;
+  private heartbeatFirstTick = true;
   private niche = new Map<string, string>();          // goalId -> niche
   private research = new Map<string, Product[]>();     // goalId -> research output
   private realRunning = new Set<string>();            // task ids executing a real worker
@@ -172,7 +177,9 @@ class Orchestrator extends EventEmitter {
   }
 
   private anyActiveGoal() {
-    return [...this.goals.values()].some((g) => g.status === "clarifying" || g.status === "planning" || g.status === "running");
+    return [...this.goals.values()].some(
+      (g) => g.status === "clarifying" || g.status === "planning" || g.status === "awaiting-approval" || g.status === "running"
+    );
   }
 
   // --- planning: select a playbook from the role library, instantiate roles ---
@@ -350,6 +357,7 @@ class Orchestrator extends EventEmitter {
     goal.status = "running";
     this.emitGoal(goal);
     this.startTicker();
+    this.startHeartbeat();
   }
 
   // --- the demo work loop ---
@@ -357,6 +365,162 @@ class Orchestrator extends EventEmitter {
   private startTicker() {
     if (this.ticker) return;
     this.ticker = setInterval(() => this.tick(), TICK_MS);
+  }
+
+  // --- CEO heartbeat: separate clock that reconciles agent state ---
+  // Runs every HEARTBEAT_MS while ANY goal is active (not just tasks).
+  // Reacts to blocked/failed/done transitions. Idempotent via lastHandledStatus.
+  // First tick sweeps stale non-terminal boot records (C14).
+  private startHeartbeat() {
+    if (this.heartbeat) return;
+    this.heartbeat = setInterval(() => this.heartbeatTick(), HEARTBEAT_MS);
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeat) {
+      clearInterval(this.heartbeat);
+      this.heartbeat = undefined;
+    }
+  }
+
+  private async heartbeatTick() {
+    // If no active goals, stop the heartbeat
+    if (!this.anyActiveGoal()) {
+      this.stopHeartbeat();
+      return;
+    }
+
+    const agents = registry.all().filter((a) => a.spec.role !== "ceo");
+
+    // First tick: boot-time stale record sweep (C14)
+    if (this.heartbeatFirstTick) {
+      this.heartbeatFirstTick = false;
+      await this.sweepStaleBootRecords(agents);
+    }
+
+    // Normal reconcile: react to status transitions
+    for (const agent of agents) {
+      const lastHandled = agent.lastHandledStatus;
+      const current = agent.status;
+
+      // Only react on transition
+      if (lastHandled === current) continue;
+
+      // Update lastHandledStatus BEFORE acting (idempotent even if action throws)
+      agent.lastHandledStatus = current;
+      registry.upsert(agent, `CEO heartbeat observed status: ${current}`);
+
+      // React to the new status
+      await this.handleAgentStatusTransition(agent, current);
+    }
+  }
+
+  // Sweep stale non-terminal records loaded from registry.json at boot (C14).
+  // A pre-existing `blocked` with no live escalation → failed/terminated.
+  // A pre-existing `working` whose sandbox is dead → failed.
+  private async sweepStaleBootRecords(agents: AgentRecord[]) {
+    for (const agent of agents) {
+      const inFlight = ["provisioning", "starting", "working", "blocked"] as AgentStatus[];
+      if (!inFlight.includes(agent.status)) continue;
+
+      // Stale blocked: no live escalation for this agent
+      if (agent.status === "blocked") {
+        const pendingEsc = escalations.pending().find((e) => e.agentId === agent.id);
+        if (!pendingEsc) {
+          agent.status = "failed";
+          registry.upsert(agent, "Boot sweep: stale blocked with no live escalation → failed");
+          bus.post({ threadId: "company", from: "ceo", kind: "status", body: `Boot sweep: ${agent.id} was blocked with no pending escalation — marked failed.` });
+        }
+        continue;
+      }
+
+      // Stale working: check if the agent has a live task
+      if (agent.status === "working") {
+        const hasLiveTask = [...this.tasks.values()].some(
+          (t) => t.agentId === agent.id && (t.status === "pending" || t.status === "running")
+        );
+        if (!hasLiveTask) {
+          agent.status = "failed";
+          registry.upsert(agent, "Boot sweep: stale working with no live task → failed");
+          bus.post({ threadId: "company", from: "ceo", kind: "status", body: `Boot sweep: ${agent.id} was working with no task — marked failed.` });
+        }
+        continue;
+      }
+
+      // Stale provisioning/starting: check sandbox health (via Factory health gate)
+      if (agent.status === "provisioning" || agent.status === "starting") {
+        // If it's from a previous session, it has no live task → fail
+        const hasLiveTask = [...this.tasks.values()].some((t) => t.agentId === agent.id);
+        if (!hasLiveTask) {
+          agent.status = "failed";
+          registry.upsert(agent, `Boot sweep: stale ${agent.status} with no task → failed`);
+          bus.post({ threadId: "company", from: "ceo", kind: "status", body: `Boot sweep: ${agent.id} was ${agent.status} with no task — marked failed.` });
+        }
+      }
+    }
+  }
+
+  // Handle a single agent's status transition. Posts one CEO status line per transition.
+  private async handleAgentStatusTransition(agent: AgentRecord, newStatus: AgentStatus) {
+    const goalId = this.findGoalIdForAgent(agent.id);
+    const threadId = goalId ?? "company";
+
+    switch (newStatus) {
+      case "blocked": {
+        // Agent entered blocked (new escalation or first observation)
+        const esc = escalations.pending().find((e) => e.agentId === agent.id);
+        const reason = esc ? esc.reason : "security escalation";
+        bus.post({
+          threadId,
+          from: "ceo",
+          kind: "status",
+          body: `${agent.id} is blocked on a security escalation (${reason}) — holding downstream tasks until operator decides.`,
+        });
+        break;
+      }
+
+      case "failed": {
+        // Agent task failed — halt dependent tasks and report
+        bus.post({
+          threadId,
+          from: "ceo",
+          kind: "status",
+          body: `${agent.id} failed — halting dependent tasks for this goal.`,
+        });
+        // The task ticker's maybeFinishGoal will handle goal finalization
+        if (goalId) this.maybeFinishGoal(goalId);
+        break;
+      }
+
+      case "done": {
+        // Agent completed — check if all peers are done to finalize goal
+        bus.post({
+          threadId,
+          from: "ceo",
+          kind: "status",
+          body: `${agent.id} completed its task.`,
+        });
+        if (goalId) this.maybeFinishGoal(goalId);
+        break;
+      }
+
+      case "terminated": {
+        // Agent terminated (e.g., after escalation denied)
+        bus.post({
+          threadId,
+          from: "ceo",
+          kind: "status",
+          body: `${agent.id} terminated — task session ended.`,
+        });
+        break;
+      }
+    }
+  }
+
+  // Find the goalId for an agent by looking at tasks
+  private findGoalIdForAgent(agentId: string): string | undefined {
+    const task = [...this.tasks.values()].find((t) => t.agentId === agentId);
+    return task?.goalId;
   }
 
   private tick() {
@@ -595,6 +759,8 @@ class Orchestrator extends EventEmitter {
   // Default true = full fresh demo.
   reset(wipeMemory = true) {
     if (this.ticker) { clearInterval(this.ticker); this.ticker = undefined; }
+    if (this.heartbeat) { clearInterval(this.heartbeat); this.heartbeat = undefined; }
+    this.heartbeatFirstTick = true;
     this.tasks.clear();
     this.goals.clear();
     this.niche.clear();
