@@ -18,6 +18,7 @@ import { missingFor } from "../config/env.js";
 import { companyProfile, clearCompanyProfile } from "../config/company.js";
 import { friendlyError } from "../config/errors.js";
 import { matchPlaybook } from "../roles/library.js";
+import { nicheFor } from "../config/niche.js";
 
 const CEO_ID = "ceo-01";
 const TICK_MS = 1200;
@@ -117,6 +118,15 @@ export class Orchestrator extends EventEmitter {
   // --- goal intake ---
 
   async startGoal(text: string) {
+    // C16: guard against second concurrent goal
+    if (this.anyActiveGoal()) {
+      bus.post({
+        threadId: "company", from: "ceo", kind: "chat",
+        body: "One company, one job at a time for this demo. Finish or reset the current goal first.",
+      });
+      return { id: "", text, status: "rejected" as const, threadId: "company", createdAt: new Date().toISOString() };
+    }
+
     this.ensureCeo();
     const id = `goal-${randomUUID().slice(0, 6)}`;
     const goal: Goal = { id, text, status: "planning", threadId: id, createdAt: new Date().toISOString() };
@@ -179,9 +189,7 @@ export class Orchestrator extends EventEmitter {
   //  compose roles for off-script goals.)
 
   private rolesFor(goal: Goal): PlannedRole[] {
-    const forMatch = goal.text.match(/\bfor\b\s+(.+?)(?:\s*—|$)/i)?.[1];
-    const answer = goal.text.split("—").length > 1 ? goal.text.split("—").pop()!.split(",")[0] : undefined;
-    const niche = (forMatch ?? answer ?? "the target market").trim();
+    const niche = nicheFor(goal.text);
     const suffix = goal.id.slice(5);
     const ctx = { goalText: goal.text, niche, idSuffix: suffix };
     const playbook = matchPlaybook(goal.text);
@@ -204,7 +212,7 @@ export class Orchestrator extends EventEmitter {
   private async plan(goal: Goal) {
     const roles = this.rolesFor(goal);
     const profile = companyProfile();
-    const niche = (goal.text.match(/\bfor\b\s+(.+?)(?:\s*—|$)/i)?.[1] ?? profile?.niche ?? goal.text.split("—").pop() ?? "the target market").trim();
+    const niche = nicheFor(goal.text);
     this.niche.set(goal.id, niche);
     this.runNumber.set(goal.id, runMemory.runNumberFor(niche));
 

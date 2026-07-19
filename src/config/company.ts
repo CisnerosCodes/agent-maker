@@ -8,6 +8,7 @@
 // and the dashboard uses it to order BUSINESS SETUP by what matters to THEM.
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from "node:fs";
+import { nicheFor } from "./niche.js";
 
 const DATA_DIR = process.env.REGISTRY_DIR ?? "./data";
 const FILE = `${DATA_DIR}/company.json`;
