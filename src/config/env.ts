@@ -39,6 +39,9 @@ export interface Integration {
   unlocks: string;            // what turns REAL when this is connected
   link: string;               // where the operator gets the credential
   hint?: string;              // one-line non-technical instruction
+  guide?: string[];           // ordered click-by-click steps for someone who has
+  //                             never seen an API key; rendered as a collapsed
+  //                             "Show me how" list on the setup card
   keys: string[];             // env vars required (ALL must be set to count)
   roles: string[];            // pipeline roles this integration makes real
   priority: number;           // 1 = set up first; setup card + CEO prompts sort by this
@@ -66,6 +69,13 @@ export const INTEGRATIONS: Integration[] = [
     unlocks: "Each hired agent gets a named company email identity — the root identity later setups build on. (Identity handle today; real outbound send is wired next, once your domain is verified.)",
     link: "https://resend.com/api-keys",
     hint: "Create a free account, add an API key. Connect your domain later for branded addresses.",
+    guide: [
+      "Go to resend.com and sign up — the free plan is all you need.",
+      "Once signed in, click API Keys in the left-hand menu.",
+      "Click Create API key, give it any name, and click Create.",
+      "Copy the long code it shows you (it starts with re_) — that code is your API key.",
+      "Come back here, paste it into the RESEND_API_KEY box, and press Save.",
+    ],
     keys: ["RESEND_API_KEY"],
     roles: [],
     priority: 1,
@@ -78,6 +88,13 @@ export const INTEGRATIONS: Integration[] = [
     unlocks: "Copywriter, strategist and analyst produce real AI output instead of canned text.",
     link: "https://console.anthropic.com/settings/keys",
     hint: "Create an API key and paste it here.",
+    guide: [
+      "Go to platform.claude.com and sign in (or create an account).",
+      "Click Settings, then API keys.",
+      "Click Create key, give it any name, and copy the long code it shows you (it starts with sk-ant-).",
+      "Paste it into the ANTHROPIC_API_KEY box here and press Save.",
+      "Good to know: usage is billed to your Anthropic account — the workers use the cheap Haiku model by default, so costs stay small.",
+    ],
     keys: ["ANTHROPIC_API_KEY"],
     roles: ["copywriter", "strategist", "analyst"],
     priority: 2,
@@ -90,6 +107,11 @@ export const INTEGRATIONS: Integration[] = [
     unlocks: "Same as the Claude brain, on the sponsor's Nemotron models (bounty track). Either brain works.",
     link: "https://build.nvidia.com",
     hint: "Sign in, generate an API key (starts with nvapi-).",
+    guide: [
+      "Go to build.nvidia.com and sign in (or create a free account).",
+      "Click Generate API Key (top right, or under your profile) and copy the long code — it starts with nvapi-.",
+      "Paste it into the NVIDIA_INFERENCE_API_KEY box here and press Save.",
+    ],
     keys: ["NVIDIA_INFERENCE_API_KEY"],
     roles: ["copywriter", "strategist", "analyst"],
     priority: 2,
@@ -101,6 +123,13 @@ export const INTEGRATIONS: Integration[] = [
     unlocks: "Same as the other brains, on Featherless-hosted Nemotron models. When connected, workers prefer it automatically.",
     link: "https://featherless.ai",
     hint: "Sign in, create an API key. Hackathon usage tokens apply here.",
+    guide: [
+      "Go to featherless.ai and sign in (or create an account).",
+      "Add credits first: open the billing page — hackathon usage tokens are redeemed there.",
+      "Open API Keys and click Create.",
+      "Copy the long code it shows you and paste it into the FEATHERLESS_API_KEY box here, then press Save.",
+      "Good to know: a key with zero credits will connect but every task will fail with 'insufficient credits' — the setup check here tells you if that happens.",
+    ],
     keys: ["FEATHERLESS_API_KEY"],
     roles: ["copywriter", "strategist", "analyst"],
     priority: 2,
@@ -111,7 +140,18 @@ export const INTEGRATIONS: Integration[] = [
     category: "Commerce",
     unlocks: "The store-builder creates real products in YOUR store — the store link at the end becomes real.",
     link: "https://www.shopify.com/partners", // free dev store; admin token under Apps > Develop apps
-    hint: "Already have a store? Paste its Admin API token. No store? Create a free dev store first — Settings > Apps > Develop apps > create app > Admin API token.",
+    hint: "Takes ~3 minutes in your store admin — open the step-by-step below. You do NOT need the Shopify CLI.",
+    guide: [
+      "⚠ Ignore anything about the Shopify CLI, Dev Dashboard, or 'shopify app dev' — that's for app developers, not you.",
+      "Go to admin.shopify.com and open YOUR store (no store yet? create a free dev store at partners.shopify.com → Stores → Create store → Dev store).",
+      "In the store admin, click Settings (bottom-left), then Apps and sales channels, then Develop apps.",
+      "If it asks, click Allow custom app development — that just lets you make your own key.",
+      "Click Create an app and name it anything you like.",
+      "Open the Configuration tab, click Configure next to Admin API scopes, search \"products\", tick write_products and read_products, then Save.",
+      "Open the API credentials tab, click Install app, then Reveal token once — copy the token right away (it is only shown once).",
+      "Paste that token into the SHOPIFY_ADMIN_TOKEN box here.",
+      "For SHOPIFY_STORE_URL, use the address that looks like https://your-store.myshopify.com — NOT a dashboard link, NOT admin.shopify.com.",
+    ],
     keys: ["SHOPIFY_ADMIN_TOKEN", "SHOPIFY_STORE_URL"],
     roles: ["store-builder"],
     priority: 3,
@@ -124,6 +164,13 @@ export const INTEGRATIONS: Integration[] = [
     unlocks: "Research scrapes real live products for your niche instead of a labeled sample catalog.",
     link: "https://console.apify.com/sign-up", // hackathon coupon: AITX_NVIDIA_CLAW_HACK
     hint: "Sign up (coupon AITX_NVIDIA_CLAW_HACK gives $50), copy your API token; actor e.g. junglee/amazon-crawler.",
+    guide: [
+      "Go to console.apify.com and sign up — the coupon code AITX_NVIDIA_CLAW_HACK gives you free credit.",
+      "Click Settings (bottom-left), then Integrations.",
+      "Copy the API token shown there — that long code is the key.",
+      "Paste it into the APIFY_TOKEN box here and press Save.",
+      "The actor box (APIFY_ACTOR) is pre-filled with a sensible default — leave it alone unless you know what you're doing.",
+    ],
     keys: ["APIFY_TOKEN", "APIFY_ACTOR"],
     roles: ["research"],
     priority: 4,
@@ -135,6 +182,11 @@ export const INTEGRATIONS: Integration[] = [
     unlocks: "Authoritative threat scanning on everything agents read and write (on top of the built-in floor).",
     link: "https://hiddenlayer.com", // event code AITX-2026
     hint: "Use event code AITX-2026, create OAuth client credentials.",
+    guide: [
+      "Go to hiddenlayer.com and sign up using event code AITX-2026.",
+      "In their console, create OAuth client credentials — that means a matched pair of codes: a client ID and a client secret.",
+      "Paste BOTH here: the ID into HIDDENLAYER_CLIENT_ID and the secret into HIDDENLAYER_CLIENT_SECRET, saving each one.",
+    ],
     keys: ["HIDDENLAYER_CLIENT_ID", "HIDDENLAYER_CLIENT_SECRET"],
     roles: [],
     priority: 5,
@@ -162,6 +214,7 @@ export function setupStatus() {
       unlocks: i.unlocks,
       link: i.link,
       hint: i.hint,
+      guide: i.guide,
       roles: i.roles,
       priority: i.priority,
       provisioning: i.provisioning,

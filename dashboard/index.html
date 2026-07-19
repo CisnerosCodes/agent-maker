@@ -227,6 +227,15 @@
     .integ .kset { font-size: 0.7rem; color: var(--green); }
     .integ .unlocks { font-size: 0.74rem; color: var(--ink-dim); margin: 0.25rem 0 0; line-height: 1.5; }
     .integ .hint { font-size: 0.7rem; color: var(--ink-mute); margin-top: 0.2rem; }
+    /* Collapsed click-by-click guide ("Show me how"). Numbered, dim, compact;
+       wraps freely so the panel keeps vertical-only scrolling. */
+    .integ .guide-toggle { border: none; background: none; padding: 0.15rem 0; margin-top: 0.3rem; font-size: 0.7rem; color: var(--ink-dim); cursor: pointer; display: inline-flex; align-items: center; gap: 0.35rem; }
+    .integ .guide-toggle:hover { background: none; color: var(--ink); }
+    .integ .guide-toggle .chev { font-size: 0.62rem; color: var(--ink-mute); transition: transform .15s ease; }
+    .integ .guide-toggle[aria-expanded="true"] .chev { transform: rotate(90deg); }
+    .integ .guide { margin: 0.3rem 0 0.2rem; padding-left: 1.2rem; font-size: 0.72rem; color: var(--ink-dim); line-height: 1.6; }
+    .integ .guide li { margin: 0.18rem 0; overflow-wrap: break-word; }
+    .integ .guide li.warn { color: var(--honey); }
     /* keyrow must never out-width the panel: the input's implicit
        min-width:auto (~20ch) plus the fixed-width key name overflowed the
        440px panel. min-width:0 lets the input shrink; wrap is the fallback
@@ -844,6 +853,23 @@
       try { localStorage.setItem("connCat:" + cat, catOpen(cat, items) ? "closed" : "open"); } catch {}
       renderSetup();
     }
+    // Guide toggles (session-only; re-renders keep the open state, no persistence).
+    const guideOpen = {}; // integration id -> bool
+    function toggleGuide(id) { guideOpen[id] = !guideOpen[id]; renderSetup(); }
+    // Steps starting with "⚠" (e.g. the Shopify CLI warning) render in honey.
+    function guideHtml(i) {
+      // Always offered when a guide exists — "connected" only means the keys are
+      // PRESENT; a pasted-but-wrong token (observed live: a stale Shopify token
+      // 401ing) is exactly when the user needs the steps.
+      if (!Array.isArray(i.guide) || !i.guide.length) return "";
+      const open = !!guideOpen[i.id];
+      return `
+        <button type="button" class="guide-toggle" aria-expanded="${open}" onclick="toggleGuide('${esc(i.id)}')">
+          <span class="chev">&#9656;</span>Show me how (step-by-step)
+        </button>
+        ${open ? `<ol class="guide">${i.guide.map(s =>
+          `<li${s.startsWith("⚠") ? ' class="warn"' : ""}>${esc(s)}</li>`).join("")}</ol>` : ""}`;
+    }
     function integHtml(i) {
       return `
         <div class="integ">
@@ -855,6 +881,7 @@
           </div>
           <div class="unlocks">${esc(i.unlocks)}</div>
           ${i.hint && !i.connected ? `<div class="hint">${esc(i.hint)}</div>` : ""}
+          ${guideHtml(i)}
           ${i.provisioning ? `<div class="hint">${esc(i.provisioning)}</div>` : ""}
           ${i.keys.map(k => `
             <div class="keyrow">
