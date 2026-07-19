@@ -11,3 +11,4 @@ test/adversarial/report/*
 .claudeignore
 .serena/
 docs/Hackathon_Docs.md
+.claude/worktrees/
