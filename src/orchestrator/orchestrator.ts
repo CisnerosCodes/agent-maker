@@ -13,7 +13,7 @@ import { registry } from "../registry/registry.js";
 import { createAgent, endAgentSession, terminateAgent } from "../factory/factory.js";
 import { clearRevocations } from "../vault/vault.js";
 import { validateSpawn, type SpawnDecision } from "../security/spawn-authority.js";
-import { workerMode, executeRole, gateOrEscalate, type Product } from "../factory/worker.js";
+import { workerMode, executeRole, gateOrEscalate, resolveBrain, type Product } from "../factory/worker.js";
 import { escalations } from "../security/escalations.js";
 import { runMemory, type RunRecord } from "../memory/runs.js";
 import { missingFor } from "../config/env.js";

@@ -118,7 +118,6 @@ export function workerMode(role: string): "real" | "sim" {
       return "sim";
   }
 }
-}
 
 // Gate helper: scan content; flagged -> escalate and await the human. Returns
 // true to proceed, false if denied (caller fails the task).

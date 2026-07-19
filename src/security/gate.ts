@@ -34,7 +34,14 @@ const FAIL_OPEN = process.env.HL_FAIL_OPEN === "1";
 
 const RANK: Record<Verdict, number> = { clean: 0, flagged: 1, blocked: 2 };
 const worse = (a: Verdict, b: Verdict): Verdict => (RANK[a] >= RANK[b] ? a : b);
-const heuristicVerdict = (categories: string[]): Verdict => (categories.length ? "flagged" : "clean");
+
+// Categories that indicate hard-block behavior (exfil, known-bad endpoints)
+// versus soft-block (needs human judgment — injection, privilege escalation).
+const BLOCK_CATEGORY_RE = /data_exfiltration|suspicious_endpoint/i;
+const heuristicVerdict = (categories: string[]): Verdict => {
+  if (categories.some((c) => BLOCK_CATEGORY_RE.test(c))) return "blocked";
+  return categories.length ? "flagged" : "clean";
+};
 
 let warnedNoCreds = false;
 
