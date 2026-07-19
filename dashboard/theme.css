@@ -1,0 +1,30 @@
+/* Agent-Maker shared foundation: vendored fonts + resets.
+   Page palettes live in each page (landing is dark, the app is light) so
+   neither leaks into the other. Everything works offline. */
+
+@font-face { font-family: "Instrument Sans"; font-weight: 400; font-display: swap; src: url("/vendor/fonts/instrument-sans-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Instrument Sans"; font-weight: 500; font-display: swap; src: url("/vendor/fonts/instrument-sans-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "Instrument Sans"; font-weight: 600; font-display: swap; src: url("/vendor/fonts/instrument-sans-latin-600-normal.woff2") format("woff2"); }
+@font-face { font-family: "Instrument Serif"; font-weight: 400; font-style: normal; font-display: swap; src: url("/vendor/fonts/instrument-serif-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Instrument Serif"; font-weight: 400; font-style: italic; font-display: swap; src: url("/vendor/fonts/instrument-serif-latin-400-italic.woff2") format("woff2"); }
+@font-face { font-family: "Space Grotesk"; font-weight: 500; font-display: swap; src: url("/vendor/fonts/space-grotesk-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "Space Grotesk"; font-weight: 700; font-display: swap; src: url("/vendor/fonts/space-grotesk-latin-700-normal.woff2") format("woff2"); }
+@font-face { font-family: "Manrope"; font-weight: 400; font-display: swap; src: url("/vendor/fonts/manrope-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Manrope"; font-weight: 500; font-display: swap; src: url("/vendor/fonts/manrope-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "Manrope"; font-weight: 600; font-display: swap; src: url("/vendor/fonts/manrope-latin-600-normal.woff2") format("woff2"); }
+@font-face { font-family: "Manrope"; font-weight: 700; font-display: swap; src: url("/vendor/fonts/manrope-latin-700-normal.woff2") format("woff2"); }
+@font-face { font-family: "Manrope"; font-weight: 800; font-display: swap; src: url("/vendor/fonts/manrope-latin-800-normal.woff2") format("woff2"); }
+
+:root {
+  --font-sans: "Instrument Sans", system-ui, -apple-system, sans-serif;
+  --font-display: "Manrope", "Instrument Sans", system-ui, sans-serif;
+  --font-serif: "Instrument Serif", Georgia, serif;
+  --font-brand: "Space Grotesk", var(--font-sans);
+  --font-mono: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+
+* { scrollbar-width: thin; }

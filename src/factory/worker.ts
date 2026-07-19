@@ -9,17 +9,25 @@
 //               findings are deterministically synthesized from real data)
 //   store-build real when SHOPIFY_ADMIN_TOKEN + SHOPIFY_STORE_URL are set
 //   copywriter  real when a brain is available
+//   any other library role (strategist, analyst, product-manager, architect…)
+//               real when a brain is available: a generic gated artifact turn
+//               (runGenericRole) — objective + upstream handoffs in, named
+//               artifact out. A failed brain call (dead key, 402) degrades
+//               THAT task to labeled sim instead of failing the goal.
 //
 // Brain selection: WORKER_BACKEND=api|nvidia|cli overrides; else auto by key.
 
 import type { AgentRecord, ScanResult, Task } from "../types.js";
 import type { ModelBackend } from "../evals/types.js";
-import { AnthropicApiBackend, ClaudeCliBackend, OpenAICompatBackend } from "../evals/backends.js";
+import { poolBrain, pinnedBrain } from "../providers/pool.js";
+import { simForced } from "../config/mode.js";
 import { scan } from "../security/gate.js";
 import { escalations } from "../security/escalations.js";
 import { governance } from "../governance/governance.js";
 import { registry } from "../registry/registry.js";
 import { bus } from "../bus/bus.js";
+import { milestoneFor, renderUpstream, type OutputSchema, type PlanContext, type RoleTemplate } from "../roles/library.js";
+import { friendlyError } from "../config/errors.js";
 
 export interface Product { title: string; price: number; image?: string }
 
@@ -71,23 +79,42 @@ async function fetchProducts(niche: string): Promise<any[]> {
   return ((await res.json()) as any).products ?? [];
 }
 
+let warnedBrain = "";
+function warnBrainOnce(msg: string) {
+  if (warnedBrain === msg) return;
+  warnedBrain = msg;
+  console.warn(`[worker] ${msg}`);
+}
+
+// The brain is now the POOL (src/providers/pool.ts): every configured provider
+// in failover order, health-tracked. An explicit WORKER_BACKEND still pins one
+// provider with no failover (operator intent); a pinned-but-keyless backend
+// falls back to sim, loudly — never a backend constructed around an undefined
+// key (that crashed mid-task with a cryptic 401).
 export function resolveBrain(): ModelBackend | null {
-  if (process.env.SIM_MODE === "1") return null;
-  const pick = process.env.WORKER_BACKEND;
-  if (pick === "api" || (!pick && process.env.ANTHROPIC_API_KEY))
-    return new AnthropicApiBackend(process.env.ANTHROPIC_API_KEY!);
-  if (pick === "nvidia" || (!pick && process.env.NVIDIA_INFERENCE_API_KEY))
-    return new OpenAICompatBackend(process.env.NVIDIA_INFERENCE_API_KEY!, process.env.NVIDIA_API_BASE ?? undefined);
-  if (pick === "cli") return new ClaudeCliBackend();
-  return null;
+  if (simForced()) return null;
+  const { pin, provider, missingKeys } = pinnedBrain();
+  if (pin && !provider) {
+    warnBrainOnce(
+      missingKeys.length
+        ? `WORKER_BACKEND=${pin} but ${missingKeys.join(" and ")} is not set — workers fall back to simulation. Paste the key in Connections or unset WORKER_BACKEND.`
+        : `WORKER_BACKEND=${pin} matches no known brain provider — workers fall back to simulation. Use one of: featherless | api | nvidia | cli.`,
+    );
+    return null;
+  }
+  return poolBrain();
 }
 
 export function workerMode(role: string): "real" | "sim" {
-  if (process.env.SIM_MODE === "1") return "sim";
-  if (role === "research") return "real";
+  if (process.env.SIM_MODE === "1") return "sim"; // offline stage insurance — EVERYTHING sim
+  if (role === "research") return "real"; // real keyless fetch, honestly labeled — even in demo mode
+  if (simForced()) return "sim"; // COMPANY_MODE=demo: no key spend, no business writes
   if (role === "store-builder") return process.env.SHOPIFY_ADMIN_TOKEN && process.env.SHOPIFY_STORE_URL ? "real" : "sim";
   if (role === "copywriter") return resolveBrain() ? "real" : "sim";
-  return "sim";
+  // Every other library role (strategist, analyst, product-manager, architect,
+  // builder, qa-reviewer, keyword-miner…) runs the generic brain-backed
+  // artifact turn (runGenericRole) when a brain key exists; labeled sim otherwise.
+  return resolveBrain() ? "real" : "sim";
 }
 
 // Gate helper: scan content; flagged -> escalate and await the human. Returns
@@ -131,7 +158,11 @@ export async function gateOrEscalate(agent: AgentRecord, content: string, kind: 
   const verdict = await decision;
   if (timer) clearTimeout(timer);
 
-  agent.status = verdict === "approved" ? (prev === "blocked" ? "working" : prev) : agent.status;
+  // Whatever the verdict, the escalation is RESOLVED — the agent must not stay
+  // "blocked" (a blocked row keeps showing approve/deny buttons with nothing
+  // left to resolve). Approved -> back to work; denied -> callers either fail
+  // the task (which sets "failed") or the agent resumes its previous status.
+  agent.status = prev === "blocked" ? "working" : prev;
   if (verdict === "approved") {
     registry.upsert(agent, `Escalation ${escalation.id} approved — continuing`);
     bus.post({ threadId, from: agent.id, kind: "status", body: `Operator approved ${escalation.id} — continuing.` });
@@ -142,9 +173,146 @@ export async function gateOrEscalate(agent: AgentRecord, content: string, kind: 
   return false;
 }
 
+// --- handoff contract (worker-capability §4) --------------------------------
+// Dependency edges carry DATA, not just timing. Each outputSchema tag has one
+// validator; upstream output is validated BEFORE it feeds a downstream prompt.
+// An empty [] or "" must NOT cross an edge silently — that is the bug where a
+// copywriter "succeeds" on zero products.
+
+export type HandoffResult = { ok: true; value: unknown } | { ok: false; reason: string };
+
+export function validateOutput(schema: OutputSchema, data: unknown): HandoffResult {
+  switch (schema) {
+    case "products": {
+      if (!Array.isArray(data) || data.length === 0) return { ok: false, reason: "no products produced (empty result)" };
+      const bad = (data as any[]).findIndex((p) => !p || typeof p.title !== "string" || typeof p.price !== "number");
+      if (bad >= 0) return { ok: false, reason: `product #${bad + 1} missing a string title or numeric price` };
+      return { ok: true, value: data };
+    }
+    case "text": {
+      if (typeof data !== "string" || data.trim() === "") return { ok: false, reason: "empty text output" };
+      return { ok: true, value: data.trim() };
+    }
+    case "url": {
+      try {
+        const u = new URL(String(data));
+        if (u.protocol !== "https:") return { ok: false, reason: `url is not https (${u.protocol})` };
+        return { ok: true, value: u.toString() };
+      } catch {
+        return { ok: false, reason: "unparseable url" };
+      }
+    }
+  }
+}
+
+// Thrown when a role's own output fails its schema (the producer is at fault).
+// The orchestrator's existing try/catch marks the task failed → goal-halt path.
+export class HandoffError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "HandoffError";
+  }
+}
+
+// Validate a role's produced output against its schema. Throws HandoffError on
+// empty/invalid so the producing task fails honestly instead of shipping junk.
+export function parseOutput(schema: OutputSchema, data: unknown): unknown {
+  const r = validateOutput(schema, data);
+  if (!r.ok) throw new HandoffError(`output failed "${schema}" schema: ${r.reason}`);
+  return r.value;
+}
+
+// Validate an UPSTREAM edge before building a downstream prompt. Throws
+// HandoffError (goal-halt) rather than let an empty/invalid handoff cross.
+export function assertHandoff(schema: OutputSchema, upstream: unknown, edge: string): unknown {
+  const r = validateOutput(schema, upstream);
+  if (!r.ok) throw new HandoffError(`handoff halted on ${edge}: ${r.reason}`);
+  return r.value;
+}
+
+// --- shared model-dispatch seam ---------------------------------------------
+// buildPrompt → scan(user_prompt) → dispatch → scan(model_response). EVERY role
+// that talks to a model routes its I/O through here, so the scan→escalate seam
+// (gateOrEscalate) is applied identically everywhere.
+
+export interface ExecOptions {
+  brain?: ModelBackend | null; // inject a backend (tests); default resolveBrain()
+  maxTokens?: number;
+}
+
+async function dispatchModel(agent: AgentRecord, task: Task, prompt: string, opts: ExecOptions = {}): Promise<string> {
+  if (!(await gateOrEscalate(agent, prompt, "user_prompt", task.goalId, "Model prompt"))) throw new Error("prompt quarantined by security policy");
+  const brain = opts.brain ?? resolveBrain();
+  if (!brain) throw new Error("no model brain available — paste a worker key in Connections (this role needs an LLM)");
+  const out = await brain.complete(prompt, { model: modelFor(brain), levelId: "worker", trial: 1, maxTokens: opts.maxTokens ?? 300 });
+  if (!(await gateOrEscalate(agent, out.text, "model_response", task.goalId, "Model response"))) throw new Error("response quarantined by security policy");
+  return out.text.trim();
+}
+
+// --- generic executor (worker-capability §2) --------------------------------
+// ONE pipeline for every role, selected by execution class. Pure-LLM roles run
+// with NOTHING but their promptFor + outputSchema — no per-role branch here or
+// in the orchestrator. research/store-builder keep their specialized pre/post
+// (broker ingest; Shopify calls) but route model I/O through the same seam.
+export async function executeRole(
+  agent: AgentRecord,
+  task: Task,
+  tmpl: RoleTemplate,
+  ctx: PlanContext,
+  upstream: unknown,
+  onProgress: (p: number) => void,
+  opts: ExecOptions = {},
+): Promise<unknown> {
+  // Roles without a declared execution class run as pure-LLM (the generic path).
+  switch (tmpl.executionClass ?? "pure-LLM") {
+    case "broker-ingest": {
+      // Harness fetches + scans, model summarizes; returns validated products.
+      const products = await runResearch(agent, task, ctx.niche, onProgress, opts);
+      return parseOutput(tmpl.outputSchema ?? "products", products);
+    }
+    case "tool-workflow": {
+      // Consumes validated upstream products, drives allowlisted tool calls.
+      const products = assertHandoff("products", upstream, `upstream → ${tmpl.role}`) as Product[];
+      const url = await runStoreBuilder(agent, task, products, onProgress);
+      return parseOutput(tmpl.outputSchema ?? "url", url);
+    }
+    default:
+      return runPureLLM(agent, task, tmpl, ctx, upstream, onProgress, opts);
+  }
+}
+
+// Pure-LLM role: prompt in (objective + validated upstream), completion out.
+export async function runPureLLM(
+  agent: AgentRecord,
+  task: Task,
+  tmpl: RoleTemplate,
+  ctx: PlanContext,
+  upstream: unknown,
+  onProgress: (p: number) => void,
+  opts: ExecOptions = {},
+): Promise<string> {
+  onProgress(15);
+  // Bespoke promptFor when the library declares one; otherwise the same generic
+  // objective+handoff prompt shape runGenericRole uses.
+  const prompt = tmpl.promptFor
+    ? tmpl.promptFor(ctx, upstream)
+    : [
+        `You are the ${tmpl.role} in a small agent company. Your objective: ${tmpl.objectiveFor(ctx)}`,
+        `Market/niche context: ${ctx.niche}.`,
+        upstream != null ? `Upstream input: ${renderUpstream(upstream)}` : "",
+        `Deliver your ${tmpl.handoff ?? "deliverable"} now. Be concrete and complete — no placeholder text, no preamble.`,
+      ].filter(Boolean).join("\n\n");
+  onProgress(30);
+  const text = await dispatchModel(agent, task, prompt, { brain: opts.brain, maxTokens: tmpl.reasoning === "high" ? 500 : 300 });
+  onProgress(90);
+  const value = parseOutput(tmpl.outputSchema ?? "text", text) as string;
+  bus.post({ threadId: task.goalId, from: agent.id, kind: "finding", body: `${tmpl.role} complete:\n${value.slice(0, 500)}` });
+  return value;
+}
+
 // --- role implementations (real path) ---
 
-export async function runResearch(agent: AgentRecord, task: Task, niche: string, onProgress: (p: number) => void): Promise<Product[]> {
+export async function runResearch(agent: AgentRecord, task: Task, niche: string, onProgress: (p: number) => void, opts: ExecOptions = {}): Promise<Product[]> {
   onProgress(10);
   bus.post({ threadId: task.goalId, from: agent.id, kind: "status", body: `Sourcing ${niche} products — ${researchSourceLabel()}` });
 
@@ -156,20 +324,32 @@ export async function runResearch(agent: AgentRecord, task: Task, niche: string,
   }));
   onProgress(50);
 
+  // Handoff contract §4: an empty research result must NOT cross the edge
+  // silently (that let a downstream copywriter "succeed" on zero products).
+  // Fail the research task here → orchestrator's failure cascade halts the goal.
+  parseOutput("products", products);
+
   // Ingested external content goes through the gate before anyone reasons on it.
   const ok = await gateOrEscalate(agent, JSON.stringify(rawProducts).slice(0, 2000), "ingested_document", task.goalId, "External research data ingested");
   if (!ok) throw new Error("ingested data quarantined by security policy");
   onProgress(65);
 
-  let summary: string;
-  const brain = resolveBrain();
+  let summary: string | null = null;
+  const brain = opts.brain ?? resolveBrain();
   if (brain) {
     const prompt = `You are a retail research analyst. In 3 sentences, summarize the opportunity for a "${niche}" store given these products (title/price): ${products.map((p) => `${p.title} ($${p.price})`).join("; ")}. Be concrete about price band and which 3 products to lead with.`;
-    if (!(await gateOrEscalate(agent, prompt, "user_prompt", task.goalId, "Model prompt"))) throw new Error("prompt quarantined");
-    const out = await brain.complete(prompt, { model: modelFor(brain), levelId: "worker", trial: 1, maxTokens: 300 });
-    if (!(await gateOrEscalate(agent, out.text, "model_response", task.goalId, "Model response"))) throw new Error("response quarantined");
-    summary = out.text.trim();
-  } else {
+    try {
+      // Route model I/O through the shared seam (same scan→escalate order everywhere).
+      summary = await dispatchModel(agent, task, prompt, { brain, maxTokens: 300 });
+    } catch (err: any) {
+      if (/quarantined/.test(String(err?.message))) throw err;
+      // Brain died mid-task (dead key, 402, timeout). The fetch was REAL —
+      // keep the findings, fall back to rule-based synthesis, and say so
+      // instead of failing the goal.
+      bus.post({ threadId: task.goalId, from: agent.id, kind: "status", body: `Model analysis unavailable — ${friendlyError(String(err?.message))} Falling back to rule-based synthesis of the real findings.` });
+    }
+  }
+  if (summary === null) {
     const sorted = [...products].sort((a, b) => a.price - b.price);
     const mid = sorted.slice(Math.floor(sorted.length / 3), Math.floor(sorted.length / 3) + 3);
     summary = `${products.length} products from ${researchSourceLabel()}, $${sorted[0]?.price}–$${sorted[sorted.length - 1]?.price}. Rule-based synthesis (add a model key for LLM analysis). Lead with mid-band: ${mid.map((p) => `${p.title} ($${p.price})`).join(", ")}.`;
@@ -180,6 +360,8 @@ export async function runResearch(agent: AgentRecord, task: Task, niche: string,
 }
 
 export async function runStoreBuilder(agent: AgentRecord, task: Task, products: Product[], onProgress: (p: number) => void): Promise<string> {
+  // Handoff contract §4: refuse to build a store on an empty/invalid shortlist.
+  assertHandoff("products", products, "research → store-builder");
   const token = process.env.SHOPIFY_ADMIN_TOKEN!;
   const store = process.env.SHOPIFY_STORE_URL!.replace(/\/$/, "");
   const picks = products.slice(0, 3);
@@ -202,20 +384,99 @@ export async function runStoreBuilder(agent: AgentRecord, task: Task, products: 
   return store;
 }
 
-export async function runCopywriter(agent: AgentRecord, task: Task, niche: string, products: Product[], onProgress: (p: number) => void): Promise<string> {
-  const brain = resolveBrain()!;
+export async function runCopywriter(agent: AgentRecord, task: Task, niche: string, products: Product[], onProgress: (p: number) => void, opts: ExecOptions = {}): Promise<string> {
+  // Handoff contract §4: don't write copy for a store with nothing in it.
+  assertHandoff("products", products, "research → copywriter");
   onProgress(20);
   const prompt = `Write a punchy one-line product description for each of these ${niche} products (format "Title — description"): ${products.slice(0, 3).map((p) => p.title).join("; ")}`;
+  try {
+    const text = await dispatchModel(agent, task, prompt, { brain: opts.brain, maxTokens: 300 });
+    onProgress(90);
+    // Handoff contract §4: empty copy is a producer fault — fail honestly.
+    const value = parseOutput("text", text) as string;
+    bus.post({ threadId: task.goalId, from: agent.id, kind: "finding", body: `Copy delivered:\n${value.slice(0, 500)}` });
+    return value;
+  } catch (err: any) {
+    if (/quarantined/.test(String(err?.message)) || err instanceof HandoffError) throw err;
+    // Dead key must cost one artifact's realism, not the goal. Degrade to
+    // LABELED simulation with the honest reason.
+    task.mode = "sim";
+    bus.post({ threadId: task.goalId, from: agent.id, kind: "status", body: `Model call unavailable — ${friendlyError(String(err?.message))} Completing this task as LABELED SIMULATION; it flips real once a working key is connected.` });
+    registry.upsert(agent, `Brain unavailable — copy degraded to labeled sim`);
+    onProgress(90);
+    const staged = `Copy delivered for ${Math.min(products.length, 3) || 3} products plus homepage hero. (staged — connect a working model key in BUSINESS SETUP for real copy)`;
+    bus.post({ threadId: task.goalId, from: agent.id, kind: "finding", body: staged });
+    return staged;
+  }
+}
+
+// Generic library-role turn — the real path for every role without a bespoke
+// implementation above. Upstream handoff artifacts go in as named sections
+// (MetaGPT SOP-style), the role's named artifact comes out; prompt and
+// response both pass the gate. A failed BRAIN call (dead key, 402, timeout)
+// degrades this one task to labeled sim — quarantines still fail the task.
+export interface UpstreamArtifact { role: string; handoff?: string; output: string }
+
+export async function runGenericRole(
+  agent: AgentRecord,
+  task: Task,
+  niche: string,
+  upstream: UpstreamArtifact[],
+  onProgress: (p: number) => void,
+): Promise<string> {
+  onProgress(10);
+  const artifact = agent.spec.handoff ?? "deliverable";
+  const sections = upstream
+    .filter((u) => u.output)
+    .map((u) => `## Handoff from ${u.role}${u.handoff ? ` — ${u.handoff}` : ""}\n${u.output.slice(0, 1800)}`)
+    .join("\n\n");
+  const prompt = [
+    `You are the ${agent.spec.role} in a small agent company. Your objective: ${agent.spec.objective}`,
+    `Market/niche context: ${niche}.`,
+    sections,
+    `Deliver your ${artifact} now. Be concrete and complete — no placeholder text, no preamble. If anything essential is unknown, end with a short ANYTHING_UNCLEAR list; otherwise omit it.`,
+  ].filter(Boolean).join("\n\n");
+
   if (!(await gateOrEscalate(agent, prompt, "user_prompt", task.goalId, "Model prompt"))) throw new Error("prompt quarantined");
-  const out = await brain.complete(prompt, { model: modelFor(brain), levelId: "worker", trial: 1, maxTokens: 300 });
-  if (!(await gateOrEscalate(agent, out.text, "model_response", task.goalId, "Model response"))) throw new Error("response quarantined");
+  onProgress(30);
+
+  const brain = resolveBrain();
+  let text: string | null = null;
+  let failNote = "no model key connected";
+  if (brain) {
+    try {
+      const out = await brain.complete(prompt, { model: modelFor(brain), levelId: "worker", trial: 1, maxTokens: 700 });
+      const trimmed = out.text.trim();
+      if (trimmed) text = trimmed;
+      else failNote = "model returned an empty response";
+    } catch (err: any) {
+      failNote = friendlyError(err.message);
+    }
+  }
+
+  if (text !== null) {
+    if (!(await gateOrEscalate(agent, text, "model_response", task.goalId, "Model response"))) throw new Error("response quarantined");
+    onProgress(90);
+    bus.post({ threadId: task.goalId, from: agent.id, kind: "finding", body: `${artifact} delivered (${brain!.name}):\n${text.slice(0, 600)}` });
+    return text;
+  }
+
+  // Honest degrade: the brain died mid-task. Complete as LABELED simulation so
+  // one dead key costs one artifact's realism, not the whole goal.
+  task.mode = "sim";
+  const staged = milestoneFor(agent.spec.role, niche)?.done ?? `Done: ${task.title}`;
+  bus.post({ threadId: task.goalId, from: agent.id, kind: "status", body: `Model call unavailable (${failNote}) — completing this task as LABELED SIMULATION. It flips real automatically once a working model key is connected in BUSINESS SETUP.` });
+  registry.upsert(agent, `Brain unavailable — task degraded to labeled sim: ${failNote.slice(0, 80)}`);
   onProgress(90);
-  bus.post({ threadId: task.goalId, from: agent.id, kind: "finding", body: `Copy delivered:\n${out.text.trim().slice(0, 500)}` });
-  return out.text.trim();
+  bus.post({ threadId: task.goalId, from: agent.id, kind: "finding", body: staged });
+  return staged;
 }
 
 function modelFor(brain: ModelBackend): string {
   if (brain.name === "api") return process.env.WORKER_MODEL ?? "claude-haiku-4-5-20251001";
   if (brain.name === "nvidia") return process.env.WORKER_MODEL ?? "nvidia/llama-3.1-nemotron-70b-instruct";
+  // Cheapest Featherless Nemotron (input $0.05/M, output $0.20/M) for testing.
+  // Swap to nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16 (or set WORKER_MODEL) for the demo.
+  if (brain.name === "featherless") return process.env.WORKER_MODEL ?? "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16";
   return process.env.WORKER_MODEL ?? "haiku";
 }

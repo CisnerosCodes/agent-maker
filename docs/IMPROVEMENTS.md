@@ -52,6 +52,11 @@ a growing library of roles" literally true. Say that line, not "makes any
 agent" — see `docs/PITCH.md`. Swap `matchPlaybook()` for a `ModelBackend`
 classifier to compose roles for fully off-script goals.
 
+**July 18 update:** the library grew from 3 to 7 playbooks (software-shipping,
+seo-optimization, customer-support, fact-check) by porting role SOPs from
+MetaGPT, ChatDev, google/adk-samples and msitarzewski/agency-agents — sources,
+licenses and the deferred-ideas list live in `docs/BORROWED_PATTERNS.md`.
+
 **Next steps for intake:**
 - Replace the scripted clarify heuristic with a model call (same `ModelBackend`
   interface) that extracts {niche, budget, product count, deadline} and asks

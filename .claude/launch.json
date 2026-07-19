@@ -6,6 +6,30 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 4000
+    },
+    {
+      "name": "dashboard-alt",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set DASHBOARD_PORT=4123&& npx tsx dashboard/server.ts"],
+      "port": 4123
+    },
+    {
+      "name": "dashboard-verify",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set DASHBOARD_PORT=4207&& npx tsx dashboard/server.ts"],
+      "port": 4207
+    },
+    {
+      "name": "dashboard-verify-2",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set DASHBOARD_PORT=4311&& npx tsx dashboard/server.ts"],
+      "port": 4311
+    },
+    {
+      "name": "dashboard-mvp-verify",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "set DASHBOARD_PORT=4101&& set REGISTRY_DIR=./data-verify&& set ENV_FILE=./.env.verify&& npx tsx dashboard/server.ts"],
+      "port": 4101
     }
   ]
 }

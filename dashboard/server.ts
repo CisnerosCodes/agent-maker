@@ -4,19 +4,26 @@
 
 import "../src/config/load-env.js"; // MUST stay first: loads .env before modules read env
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, statSync, createReadStream } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { registry } from "../src/registry/registry.js";
 import { bus } from "../src/bus/bus.js";
 import { orchestrator } from "../src/orchestrator/orchestrator.js";
 import { escalations } from "../src/security/escalations.js";
 import { heuristicScan } from "../src/security/detect.js";
 import { governance } from "../src/governance/governance.js";
-import { setupStatus, saveEnvVar } from "../src/config/env.js";
+import { setupStatus, saveEnvVar, clearEnvVar } from "../src/config/env.js";
+import { runDoctor } from "../src/config/doctor.js";
+import { brainPoolStatus, resetHealthForKey } from "../src/providers/pool.js";
+import { modeStatus } from "../src/config/mode.js";
 import { companyProfile, saveCompanyProfile, suggestedFirstGoal, STARTER_PACKS } from "../src/config/company.js";
 
 const PORT = Number(process.env.DASHBOARD_PORT ?? 4000);
 const EVALS_DIR = process.env.EVALS_DIR ?? "./data/evals";
+// Shown to the user when an error is on OUR side (unexpected 500s), so a
+// non-technical founder has somewhere to go besides the terminal.
+export const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL ?? "adrianbencisneros@gmail.com";
 const clients = new Set<ServerResponse>();
 
 function broadcast(type: string, data: unknown) {
@@ -44,11 +51,21 @@ bus.on("message", (msg) => {
   if (categories.length) broadcast("gate", { messageId: msg.id, from: msg.from, verdict: "flagged", categories });
 });
 
+// Approve/deny by escalation id OR by agent id. The agent-table row buttons
+// send the AGENT id (the escalation id is not on the row); resolving strictly
+// by escalation id made those buttons silently do nothing.
+function resolveEscalationRef(ref: string, verdict: "approved" | "denied") {
+  if (escalations.all().some((e) => e.id === ref)) return escalations.resolve(ref, verdict);
+  const pendingForAgent = escalations.pending().find((e) => e.agentId === ref);
+  return pendingForAgent ? escalations.resolve(pendingForAgent.id, verdict) : undefined;
+}
+
 function snapshot() {
   return {
     agents: registry.all(),
     messages: bus.recent(),
     escalations: escalations.all(),
+    mode: modeStatus(),
     ...orchestrator.snapshot(),
   };
 }
@@ -78,11 +95,68 @@ function json(res: ServerResponse, data: unknown, status = 200) {
   res.end(JSON.stringify(data));
 }
 
+// Static assets for the front end: design system, logo, vendored libs/fonts,
+// and optional generated media (dashboard/media — gitignored-friendly, pages
+// degrade gracefully when a file is absent). Whitelist pattern, no traversal.
+const STATIC_TYPES: Record<string, string> = {
+  ".css": "text/css", ".js": "text/javascript", ".mjs": "text/javascript",
+  ".svg": "image/svg+xml", ".woff2": "font/woff2", ".png": "image/png",
+  ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
+  ".mp4": "video/mp4", ".webm": "video/webm", ".ico": "image/x-icon",
+};
+function serveStatic(req: IncomingMessage, res: ServerResponse, urlPath: string): boolean {
+  const rel = urlPath.replace(/^\//, "").split("?")[0];
+  if (!/^(theme\.css|logo\.svg|(vendor|media)\/[\w][\w.\/-]*)$/.test(rel) || rel.includes("..")) return false;
+  const file = fileURLToPath(new URL(`./${rel}`, import.meta.url));
+  if (!existsSync(file)) return false;
+  const ext = rel.slice(rel.lastIndexOf("."));
+  const type = STATIC_TYPES[ext] ?? "application/octet-stream";
+  const size = statSync(file).size;
+  // Range support matters: browsers seek <video> via byte-range requests
+  // (e.g. the optional /media/demo.mp4 on the landing page).
+  const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? "");
+  if (range && (range[1] || range[2])) {
+    const start = range[1] ? parseInt(range[1], 10) : Math.max(0, size - parseInt(range[2], 10));
+    const end = range[1] && range[2] ? Math.min(parseInt(range[2], 10), size - 1) : size - 1;
+    if (start >= size || start > end) {
+      res.writeHead(416, { "Content-Range": `bytes */${size}` }).end();
+      return true;
+    }
+    res.writeHead(206, {
+      "Content-Type": type, "Cache-Control": "no-cache", "Accept-Ranges": "bytes",
+      "Content-Range": `bytes ${start}-${end}/${size}`, "Content-Length": end - start + 1,
+    });
+    createReadStream(file, { start, end }).pipe(res);
+    return true;
+  }
+  res.writeHead(200, { "Content-Type": type, "Cache-Control": "no-cache", "Accept-Ranges": "bytes", "Content-Length": size });
+  createReadStream(file).pipe(res);
+  return true;
+}
+
 createServer(async (req, res) => {
   try {
-    if (req.url === "/") {
+    if (req.url === "/" || req.url === "/home") {
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end(readFileSync(new URL("./landing.html", import.meta.url)));
+    } else if (req.url === "/app" || req.url === "/app/") {
       res.writeHead(200, { "Content-Type": "text/html" });
       res.end(readFileSync(new URL("./index.html", import.meta.url)));
+    } else if (req.method === "GET" && serveStatic(req, res, req.url ?? "")) {
+      // handled by static whitelist above
+    } else if (req.url === "/setup") {
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.end(readFileSync(new URL("./setup.html", import.meta.url)));
+    } else if (req.url?.startsWith("/api/doctor")) {
+      // System self-check. ?live=0 skips the real key calls; ?only=id,id runs a
+      // subset (used by the Connections panel to verify one key right after
+      // it is saved). Results are booleans + plain English — never key values.
+      const q = new URL(req.url, "http://x").searchParams;
+      const report = await runDoctor({
+        live: q.get("live") !== "0",
+        only: q.get("only")?.split(",").filter(Boolean) ?? undefined,
+      });
+      json(res, report);
     } else if (req.url === "/evals") {
       res.writeHead(200, { "Content-Type": "text/html" });
       res.end(readFileSync(new URL("./evals.html", import.meta.url)));
@@ -98,6 +172,9 @@ createServer(async (req, res) => {
         body: `Welcome, ${profile.name}. I read your profile: niche "${profile.niche}", objective "${profile.objective}"${profile.hasStore ? `, existing store at ${profile.storeUrl ?? "(URL not given)"}` : profile.wantsStoreSetup ? ", no store yet — we'll set one up" : ""}. Starter team installed: ${profile.starterAgents.join(", ")}. ${profile.hasContext ? "Your context notes are on file — agents will use them. " : ""}Give me a goal when ready — suggested: "${suggestedFirstGoal()}".`,
       });
       json(res, { ok: true, profile, suggestedGoal: suggestedFirstGoal() });
+    } else if (req.url === "/api/snapshot" && req.method === "GET") {
+      // Same payload as the SSE hello, for pull-based clients (the MCP server).
+      json(res, snapshot());
     } else if (req.url === "/api/setup" && req.method === "GET") {
       // BOOLEANS ONLY — never returns credential values.
       json(res, setupStatus());
@@ -107,11 +184,43 @@ createServer(async (req, res) => {
       const { key, value } = await body(req);
       try {
         saveEnvVar(String(key ?? ""), String(value ?? ""));
+        resetHealthForKey(String(key ?? "")); // a fresh key deserves a fresh verdict
         broadcast("setup", setupStatus());
+        broadcast("mode", modeStatus());
         json(res, { ok: true, status: setupStatus() });
       } catch (e: any) {
         json(res, { error: e.message }, 400);
       }
+    } else if (req.url === "/api/setup" && req.method === "DELETE") {
+      // Remove a credential (e.g. a dead out-of-credit key) so the brain pool
+      // stops considering it. Same allowlist as saving.
+      const { key } = await body(req);
+      try {
+        clearEnvVar(String(key ?? ""));
+        resetHealthForKey(String(key ?? ""));
+        broadcast("setup", setupStatus());
+        broadcast("mode", modeStatus());
+        json(res, { ok: true, status: setupStatus() });
+      } catch (e: any) {
+        json(res, { error: e.message }, 400);
+      }
+    } else if (req.url === "/api/providers" && req.method === "GET") {
+      // Brain-pool health: which providers are configured, which one answers
+      // next, who is cooling down and why. Booleans + friendly text only.
+      json(res, brainPoolStatus());
+    } else if (req.url === "/api/mode" && req.method === "GET") {
+      json(res, modeStatus());
+    } else if (req.url === "/api/mode" && req.method === "POST") {
+      // The demo/real switch. "auto" clears COMPANY_MODE (derive from keys).
+      const { mode } = await body(req);
+      const want = String(mode ?? "").trim().toLowerCase();
+      if (!["demo", "real", "auto"].includes(want)) return json(res, { error: `mode must be demo, real or auto (got "${want}")` }, 400);
+      if (want === "auto") clearEnvVar("COMPANY_MODE");
+      else saveEnvVar("COMPANY_MODE", want);
+      const status = modeStatus();
+      bus.post({ threadId: "company", from: "user", kind: "system", body: `Company mode set to ${want.toUpperCase()} — ${status.reason}` });
+      broadcast("mode", status);
+      json(res, { ok: true, ...status });
     } else if (req.url === "/events") {
       res.writeHead(200, {
         "Content-Type": "text/event-stream",
@@ -153,15 +262,13 @@ createServer(async (req, res) => {
       broadcast("snapshot", snapshot());
       json(res, { ok: true, keptMemory: keepMemory });
     } else if (req.url?.startsWith("/approve/") && req.method === "POST") {
-      const id = req.url.split("/")[2];
-      const esc = escalations.resolve(id, "approved");
-      if (esc) bus.post({ threadId: "company", from: "user", kind: "system", body: `Operator APPROVED ${id}` });
-      json(res, { ok: !!esc, escalation: esc });
+      const esc = resolveEscalationRef(req.url.split("/")[2], "approved");
+      if (esc) bus.post({ threadId: "company", from: "user", kind: "system", body: `Operator APPROVED ${esc.id}` });
+      json(res, { ok: !!esc, escalation: esc, ...(esc ? {} : { error: "No pending escalation matches that id — it may already be resolved." }) });
     } else if (req.url?.startsWith("/deny/") && req.method === "POST") {
-      const id = req.url.split("/")[2];
-      const esc = escalations.resolve(id, "denied");
-      if (esc) bus.post({ threadId: "company", from: "user", kind: "system", body: `Operator DENIED ${id}` });
-      json(res, { ok: !!esc, escalation: esc });
+      const esc = resolveEscalationRef(req.url.split("/")[2], "denied");
+      if (esc) bus.post({ threadId: "company", from: "user", kind: "system", body: `Operator DENIED ${esc.id}` });
+      json(res, { ok: !!esc, escalation: esc, ...(esc ? {} : { error: "No pending escalation matches that id — it may already be resolved." }) });
     } else if (req.url === "/attack" && req.method === "POST") {
       // Red-team demo (money demo #2): feed a poisoned document to a worker's
       // ingestion gate. The SecurityGate flags it and the worker RAISES a real
@@ -174,6 +281,22 @@ createServer(async (req, res) => {
       res.writeHead(404).end();
     }
   } catch (err: any) {
-    json(res, { error: err.message }, 500);
+    // Unexpected = our bug, not the user's. Give them a way out that is not
+    // "read the stack trace": the setup checker for config issues, and a
+    // support contact for everything else.
+    json(res, { error: err.message, ourFault: true, support: SUPPORT_EMAIL }, 500);
   }
-}).listen(PORT, () => console.log(`Dashboard: http://localhost:${PORT}`));
+}).listen(PORT, () => {
+  console.log(`Dashboard: http://localhost:${PORT}`);
+  console.log(`Setup checklist: http://localhost:${PORT}/setup  (or run: npm run doctor)`);
+  // Clean up agents stranded in-flight by a previous session (registry
+  // persists across restarts; in-memory tasks do not).
+  orchestrator.reconcileStaleAgents();
+}).on("error", (err: NodeJS.ErrnoException) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(`\nPort ${PORT} is already in use — is another 'npm run dev' still running?`);
+    console.error(`Close it, or start on another port:  DASHBOARD_PORT=${PORT + 1} npm run dev  (PowerShell: $env:DASHBOARD_PORT=${PORT + 1}; npm run dev)\n`);
+    process.exit(1);
+  }
+  throw err;
+});

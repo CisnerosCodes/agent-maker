@@ -6,6 +6,8 @@
 //   nvidia — any OpenAI-compatible endpoint; defaults to NVIDIA hosted Nemotron
 //            (needs NVIDIA_INFERENCE_API_KEY). This is the same interface the
 //            Factory will use for worker inference, so eval results transfer.
+//   featherless — Featherless AI's OpenAI-compatible endpoint (also serves
+//            Nemotron); reuses OpenAICompatBackend (needs FEATHERLESS_API_KEY).
 //   file   — grade pre-collected responses from a JSON file:
 //            { "<levelId>:<trial>": "raw response text", ... }
 //            Used when responses are gathered out-of-band (e.g. via Claude
@@ -16,6 +18,10 @@ import { readFileSync } from "node:fs";
 import type { ModelBackend } from "./types.js";
 
 const DEFAULT_MAX_TOKENS = 1024;
+// Slow models are fine; HUNG requests are not. Without a timeout, one stalled
+// HTTP call left a worker task frozen mid-progress with no error and nothing
+// on screen. 3 minutes is generous headroom for the slowest reasoning model.
+const REQUEST_TIMEOUT_MS = Number(process.env.MODEL_TIMEOUT_MS ?? 180000);
 
 export class AnthropicApiBackend implements ModelBackend {
   name = "api";
@@ -35,6 +41,7 @@ export class AnthropicApiBackend implements ModelBackend {
         max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
         messages: [{ role: "user", content: prompt }],
       }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${(await res.text()).slice(0, 300)}`);
     const data: any = await res.json();
@@ -92,6 +99,7 @@ export class OpenAICompatBackend implements ModelBackend {
         max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
         messages: [{ role: "user", content: prompt }],
       }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`${this.name} ${res.status}: ${(await res.text()).slice(0, 300)}`);
     const data: any = await res.json();
@@ -128,11 +136,20 @@ export function makeBackend(kind: string, fileArg?: string): ModelBackend {
       if (!key) throw new Error("backend=nvidia requires NVIDIA_INFERENCE_API_KEY");
       return new OpenAICompatBackend(key, process.env.NVIDIA_API_BASE ?? undefined);
     }
+    case "featherless": {
+      const key = process.env.FEATHERLESS_API_KEY;
+      if (!key) throw new Error("backend=featherless requires FEATHERLESS_API_KEY");
+      return new OpenAICompatBackend(
+        key,
+        process.env.FEATHERLESS_API_BASE ?? "https://api.featherless.ai/v1",
+        "featherless",
+      );
+    }
     case "file": {
       if (!fileArg) throw new Error("backend=file requires --file <responses.json>");
       return new ResponsesFileBackend(fileArg);
     }
     default:
-      throw new Error(`Unknown backend "${kind}" (expected api | cli | nvidia | file)`);
+      throw new Error(`Unknown backend "${kind}" (expected api | cli | nvidia | featherless | file)`);
   }
 }

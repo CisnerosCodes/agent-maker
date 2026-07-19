@@ -23,14 +23,21 @@ export interface RoleAuthority {
 }
 
 // A.1 Authority table — the whole defense in one place. Credentials use the
-// canonical names (worker-capability.spec.md §5): SHOPIFY_ADMIN_TOKEN is the only
-// sandbox-issued credential; APIFY_TOKEN is harness-only and issued to NO role;
-// NVIDIA_API_KEY lives in gateway env (never a spec credential).
+// canonical names (worker-capability.spec.md §5): SHOPIFY_ADMIN_TOKEN is the
+// sandbox-issued store credential; NVIDIA_API_KEY lives in gateway env (never a
+// spec credential).
+//
+// `research` is broker-ingest — inference egress only, NO issued credential
+// (the harness scrapes with env-resolved APIFY_TOKEN and passes text in; C15
+// dropped the credential from the library template, so the table is tightened
+// back to []). Every CROSS-role escalation is refused — a `research` spec
+// asking for SHOPIFY_ADMIN_TOKEN, an unknown role, a policy-template swap, or
+// any out-of-table tool is rejected.
 export const AUTHORITY_TABLE: Readonly<Record<string, RoleAuthority>> = Object.freeze({
   research: {
-    allowedCredentials: [], // none — document ingest is harness-brokered
+    allowedCredentials: [], // broker-ingest: harness-brokered fetch, no issued credential
     policyTemplate: "worker-research.yaml",
-    allowedTools: ["web-fetch"], // harness-brokered, not a raw sandbox egress
+    allowedTools: ["apify", "web-fetch"], // apify is harness-brokered (env-resolved), not raw sandbox egress
   },
   "store-builder": {
     allowedCredentials: ["SHOPIFY_ADMIN_TOKEN"],

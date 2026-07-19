@@ -7,7 +7,8 @@
 // objectives (e.g. "add products to YOUR store" vs "create a dev store"),
 // and the dashboard uses it to order BUSINESS SETUP by what matters to THEM.
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from "node:fs";
+import { nicheFor } from "./niche.js";
 
 const DATA_DIR = process.env.REGISTRY_DIR ?? "./data";
 const FILE = `${DATA_DIR}/company.json`;
@@ -97,6 +98,14 @@ export function saveCompanyProfile(input: Partial<CompanyProfile> & { context?: 
   if (context?.trim()) writeFileSync(CONTEXT_FILE, context.trim() + "\n");
   cached = profile;
   return profile;
+}
+
+// Full demo reset wipes the profile too, so the next visit re-runs onboarding
+// (the intake questions are part of the demo, not one-time setup).
+export function clearCompanyProfile() {
+  try { if (existsSync(FILE)) unlinkSync(FILE); } catch { /* leave a stale file over crashing a reset */ }
+  try { if (existsSync(CONTEXT_FILE)) unlinkSync(CONTEXT_FILE); } catch { /* ditto */ }
+  cached = null;
 }
 
 export function companyContext(): string {

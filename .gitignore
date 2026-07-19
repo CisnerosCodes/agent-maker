@@ -4,10 +4,13 @@ data/*
 !data/evals/
 .env
 policies/rendered/
+test/adversarial/report/*
+!test/adversarial/report/.gitkeep
 *.log
 .DS_Store
 .claudeignore
 .serena/
-package-lock.json
-package.json
 docs/Hackathon_Docs.md
+.claude/worktrees/
+.env.verify
+data-verify/

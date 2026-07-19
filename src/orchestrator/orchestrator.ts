@@ -6,20 +6,28 @@
 
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import type { AgentRecord, AgentSpec, BusMessage, Goal, PlanApproval, Task } from "../types.js";
+import type { AgentRecord, AgentSpec, AgentStatus, BusMessage, Goal, PlanApproval, Task } from "../types.js";
 import { governance } from "../governance/governance.js";
 import { bus } from "../bus/bus.js";
 import { registry } from "../registry/registry.js";
-import { createAgent } from "../factory/factory.js";
-import { workerMode, runResearch, runStoreBuilder, runCopywriter, gateOrEscalate, type Product } from "../factory/worker.js";
+import { createAgent, endAgentSession, terminateAgent } from "../factory/factory.js";
+import { clearRevocations } from "../vault/vault.js";
+import { validateSpawn, type SpawnDecision } from "../security/spawn-authority.js";
+import { workerMode, resolveBrain, runResearch, runStoreBuilder, runCopywriter, runGenericRole, gateOrEscalate, type Product } from "../factory/worker.js";
 import { escalations } from "../security/escalations.js";
 import { runMemory, type RunRecord } from "../memory/runs.js";
 import { missingFor } from "../config/env.js";
-import { companyProfile } from "../config/company.js";
-import { matchPlaybook } from "../roles/library.js";
+import { companyProfile, clearCompanyProfile } from "../config/company.js";
+import { friendlyError } from "../config/errors.js";
+import { modeStatus } from "../config/mode.js";
+import { matchPlaybook, milestoneFor } from "../roles/library.js";
+import { nicheFor } from "../config/niche.js";
 
 const CEO_ID = "ceo-01";
 const TICK_MS = 1200;
+// CEO heartbeat: slower, separate clock that stays alive while ANY goal is active
+// (not just active tasks). Reacts to blocked/failed/done transitions.
+const HEARTBEAT_MS = 5000;
 
 interface PlannedRole {
   spec: AgentSpec;
@@ -28,10 +36,12 @@ interface PlannedRole {
   dependsOnIndex: number[]; // indices into the same plan array
 }
 
-class Orchestrator extends EventEmitter {
+export class Orchestrator extends EventEmitter {
   goals = new Map<string, Goal>();
   tasks = new Map<string, Task>();
   private ticker?: NodeJS.Timeout;
+  private heartbeat?: NodeJS.Timeout;
+  private heartbeatFirstTick = true;
   private niche = new Map<string, string>();          // goalId -> niche
   private research = new Map<string, Product[]>();     // goalId -> research output
   private realRunning = new Set<string>();            // task ids executing a real worker
@@ -67,15 +77,42 @@ class Orchestrator extends EventEmitter {
   // Red-team: feed a poisoned document to the research agent's ingestion gate.
   // Uses gateOrEscalate so the flow is identical to a real ingested source —
   // the gate flags it and a real, resolvable escalation is raised.
-  async injectAttack(payload: string): Promise<{ ok: boolean; agentId?: string; allowed?: boolean }> {
+  //
+  // Returns IMMEDIATELY (the escalation resolves later via the approve/deny
+  // buttons). Awaiting the human here made the HTTP POST /attack — and the MCP
+  // run_security_demo tool call — hang until someone clicked, which read as
+  // "the button does nothing".
+  async injectAttack(payload: string): Promise<{ ok: boolean; agentId?: string; error?: string }> {
     const agent = registry.get(this.lastResearchId ?? "") ?? registry.all().find((a) => a.spec.role === "research");
-    if (!agent) return { ok: false };
+    if (!agent) return { ok: false, error: "No research agent exists yet — launch a goal first (the attack targets the research agent's ingestion gate)." };
     const threadId = [...this.tasks.values()].find((t) => t.agentId === agent.id)?.goalId ?? "company";
+    const wasStatus = agent.status;
     bus.post({ threadId, from: "external-source", to: agent.id, kind: "finding", body: `Ingested document from research source: ${payload}` });
-    const allowed = await gateOrEscalate(agent, payload, "ingested_document", threadId, "Poisoned document from external research source");
-    if (allowed) bus.post({ threadId, from: agent.id, kind: "status", body: "Operator approved the ingested document — proceeding (note: OpenShell egress policy still blocks the exfil host independently)." });
-    else bus.post({ threadId, from: agent.id, kind: "system", body: "Poisoned document quarantined. Defense in depth: even if approved, the OpenShell policy denies the evil.example egress host." });
-    return { ok: true, agentId: agent.id, allowed };
+    // Fire and forget: the decision continuation runs when the human clicks.
+    // Honest layer-2 claim: the OpenShell egress backstop only exists when this
+    // agent actually runs in a NemoClaw sandbox. UNCONTAINED runs say so.
+    const contained = agent.containment === "nemoclaw";
+    gateOrEscalate(agent, payload, "ingested_document", threadId, "Poisoned document from external research source")
+      .then((allowed) => {
+        if (allowed) {
+          bus.post({ threadId, from: agent.id, kind: "status", body: contained
+            ? "Operator approved the ingested document — proceeding (note: OpenShell egress policy still blocks the exfil host independently)."
+            : "Operator approved the ingested document — proceeding. (This run is UNCONTAINED — no OpenShell egress backstop; set WORKER_MODE=nemoclaw for layer-2 containment.)" });
+        } else {
+          bus.post({ threadId, from: agent.id, kind: "system", body: contained
+            ? "Poisoned document quarantined. Defense in depth: even if approved, the OpenShell policy denies the evil.example egress host."
+            : "Poisoned document quarantined by the operator (layer 1). Layer-2 note: this run is UNCONTAINED — set WORKER_MODE=nemoclaw for the independent OpenShell egress block." });
+        }
+        // Either way the demo attack is OVER — the agent goes back to what it
+        // was doing. Leaving it "blocked" after a deny left zombie rows with
+        // approve/deny buttons that had nothing left to resolve.
+        if (agent.status === "blocked") {
+          agent.status = wasStatus === "blocked" ? "waiting" : wasStatus;
+          registry.upsert(agent, "Back to previous status after attack demo resolution");
+        }
+      })
+      .catch((err) => console.error(`[attack] ${err.message}`));
+    return { ok: true, agentId: agent.id };
   }
 
   private ensureCeo() {
@@ -97,6 +134,35 @@ class Orchestrator extends EventEmitter {
 
   async startGoal(text: string) {
     this.ensureCeo();
+
+    // REAL mode contract: the company never STARTS a goal it already knows it
+    // cannot execute for real. (Mid-run key death still degrades per-task to
+    // labeled sim — that is resilience; launching keyless in REAL mode would
+    // be a silent demo wearing a REAL badge.)
+    const mode = modeStatus();
+    if (mode.mode === "real" && !mode.ready) {
+      const goal: Goal = { id: `goal-${randomUUID().slice(0, 6)}`, text, status: "failed", threadId: "company", createdAt: new Date().toISOString() };
+      bus.post({
+        threadId: "company", from: "ceo", kind: "system",
+        body: `Goal refused — ${mode.reason} (Or switch to DEMO mode in Connections to run everything as labeled simulation.)`,
+      });
+      this.emitGoal(goal);
+      return goal;
+    }
+
+    // Concurrency refusal (factory-provisioning §6, C16): one company, one job at
+    // a time for the demo. A second goal would spawn a second agent record per
+    // role sharing ONE per-role sandbox + niche-keyed run memory — a live race on
+    // shared state, on stage. Refuse honestly and keep the active goal running.
+    const active = [...this.goals.values()].find((g) => g.status === "clarifying" || g.status === "planning" || g.status === "awaiting-approval" || g.status === "running");
+    if (active) {
+      bus.post({
+        threadId: "company", from: "ceo", kind: "chat",
+        body: `Let me finish the current goal first — one company, one job at a time for this demo. I'm still on "${active.text.slice(0, 80)}". Ask again once it wraps and I'll staff the next one.`,
+      });
+      return active;
+    }
+
     const id = `goal-${randomUUID().slice(0, 6)}`;
     const goal: Goal = { id, text, status: "planning", threadId: id, createdAt: new Date().toISOString() };
     this.goals.set(id, goal);
@@ -136,10 +202,26 @@ class Orchestrator extends EventEmitter {
     // Direct message to a worker: acknowledge and fold into its work.
     if (m.to && m.to !== CEO_ID && registry.get(m.to)) {
       const agent = registry.get(m.to)!;
-      setTimeout(() => {
-        bus.post({ threadId: m.threadId, from: agent.id, to: "user", kind: "chat", body: `Noted — factoring "${m.body}" into my current task.` });
-        registry.upsert(agent, `User note received: ${m.body.slice(0, 60)}`);
-      }, 900);
+      registry.upsert(agent, `User note received: ${m.body.slice(0, 60)}`);
+      const brain = resolveBrain();
+      if (brain) {
+        // Real reply: a small gated model turn in the agent's voice. Failure
+        // degrades to the honest acknowledgment below — never a fake chat line.
+        const task = [...this.tasks.values()].find((t) => t.agentId === agent.id);
+        const prompt = `You are ${agent.id}, the ${agent.spec.role} in a small agent company${task ? `, currently working on "${task.title}"` : ""}. The human operator just told you: "${m.body}". Reply in ONE short sentence: acknowledge and say concretely how it affects your work.`;
+        try {
+          const out = await brain.complete(prompt, { model: "", levelId: "chat", trial: 1, maxTokens: 80 });
+          const reply = out.text.trim();
+          if (reply && (await gateOrEscalate(agent, reply, "model_response", m.threadId, "Chat reply"))) {
+            bus.post({ threadId: m.threadId, from: agent.id, to: "user", kind: "chat", body: reply });
+            return;
+          }
+        } catch { /* fall through to the honest acknowledgment */ }
+      }
+      bus.post({
+        threadId: m.threadId, from: agent.id, to: "user", kind: "status",
+        body: `Note logged to my task context. (auto-acknowledgment — connect a model key for a real reply)`,
+      });
       return;
     }
 
@@ -150,7 +232,9 @@ class Orchestrator extends EventEmitter {
   }
 
   private anyActiveGoal() {
-    return [...this.goals.values()].some((g) => g.status === "clarifying" || g.status === "planning" || g.status === "running");
+    return [...this.goals.values()].some(
+      (g) => g.status === "clarifying" || g.status === "planning" || g.status === "awaiting-approval" || g.status === "running"
+    );
   }
 
   // --- planning: select a playbook from the role library, instantiate roles ---
@@ -158,9 +242,7 @@ class Orchestrator extends EventEmitter {
   //  compose roles for off-script goals.)
 
   private rolesFor(goal: Goal): PlannedRole[] {
-    const forMatch = goal.text.match(/\bfor\b\s+(.+?)(?:\s*—|$)/i)?.[1];
-    const answer = goal.text.split("—").length > 1 ? goal.text.split("—").pop()!.split(",")[0] : undefined;
-    const niche = (forMatch ?? answer ?? "the target market").trim();
+    const niche = nicheFor(goal.text);
     const suffix = goal.id.slice(5);
     const ctx = { goalText: goal.text, niche, idSuffix: suffix };
     const playbook = matchPlaybook(goal.text);
@@ -176,14 +258,57 @@ class Orchestrator extends EventEmitter {
         credentials: r.credentials,
         policyTemplate: r.policyTemplate,
         reasoning: r.reasoning,
+        handoff: r.handoff,
       },
     }));
   }
 
+  // --- spawn-authority enforcement (the injected-goal defense) ---------------
+  // Every AgentSpec the CEO emits is validated against the fixed spawn-authority
+  // table (src/security/spawn-authority.ts) BEFORE the Factory's createAgent runs.
+  // The broker is deterministic and non-LLM — its input is a struct — so a fully
+  // prompt-injected CEO can only PROPOSE specs; it cannot talk the broker into
+  // provisioning an out-of-authority agent. If ANY spec in the plan is refused the
+  // WHOLE plan is refused: no agent is created (a compromised plan spawns zero
+  // agents, and there is no partial fleet left with dangling task dependencies).
+  // The broker logs + counts each denial itself; here we mirror it to the
+  // bus/dashboard and surface an honest status line. This is what makes
+  // ceo-sandbox.spec.md §5.1 real (ceo-brain-and-spawn-authority.spec.md §A).
+  private authorizeRoles(goal: Goal, roles: PlannedRole[]): boolean {
+    const denials: SpawnDecision[] = [];
+    for (const role of roles) {
+      const decision = validateSpawn(role.spec);
+      if (!decision.allowed) denials.push(decision);
+    }
+    if (denials.length === 0) return true;
+
+    for (const d of denials) {
+      bus.post({
+        threadId: goal.id, from: "ceo", kind: "system",
+        body: `Spawn-authority broker DENIED role '${d.role}': ${d.reason}. No agent created.`,
+      });
+    }
+    this.emit("spawnDenied", { goalId: goal.id, denials });
+    goal.status = "failed";
+    this.emitGoal(goal);
+    bus.post({
+      threadId: goal.id, from: "ceo", kind: "status",
+      body: `Org plan refused — ${denials.length} spawn request(s) exceeded role authority; nothing hired. The spawn-authority broker is a deterministic host gate: a compromised planner may propose out-of-authority agents but cannot provision them.`,
+    });
+    const ceo = registry.get(CEO_ID);
+    if (ceo) { ceo.status = "waiting"; registry.upsert(ceo, `Plan refused: ${denials.length} out-of-authority spawn(s) blocked`); }
+    return false;
+  }
+
   private async plan(goal: Goal) {
     const roles = this.rolesFor(goal);
+
+    // Spawn-authority gate — refuse an out-of-authority plan BEFORE any profile
+    // work, approval prompt, or hiring. A prompt-injected CEO gets no agents.
+    if (!this.authorizeRoles(goal, roles)) return;
+
     const profile = companyProfile();
-    const niche = (goal.text.match(/\bfor\b\s+(.+?)(?:\s*—|$)/i)?.[1] ?? profile?.niche ?? goal.text.split("—").pop() ?? "the target market").trim();
+    const niche = nicheFor(goal.text);
     this.niche.set(goal.id, niche);
     this.runNumber.set(goal.id, runMemory.runNumberFor(niche));
 
@@ -257,11 +382,17 @@ class Orchestrator extends EventEmitter {
 
     const taskIds: string[] = [];
     for (const role of roles) {
-      const record = await createAgent(role.spec, CEO_ID);
+      // Mint the task id FIRST so the Factory can key the sandbox session on it
+      // (factory-provisioning §2: session == taskId, isolated per-task workdir).
+      const taskId = `task-${randomUUID().slice(0, 6)}`;
+      // Every role.spec reaching here passed the spawn-authority broker
+      // (authorizeRoles, at the top of plan()) — createAgent never runs on an
+      // out-of-authority spec.
+      const record = await createAgent(role.spec, CEO_ID, taskId);
       if (role.spec.role === "research") this.lastResearchId = record.id;
       const mode = workerMode(role.spec.role);
       const task: Task = {
-        id: `task-${randomUUID().slice(0, 6)}`,
+        id: taskId,
         goalId: goal.id,
         title: role.title,
         agentId: record.id,
@@ -272,9 +403,19 @@ class Orchestrator extends EventEmitter {
         mode,
       };
       taskIds.push(task.id);
+      // Honest provisioning failure (factory-provisioning §4): a vault miss or an
+      // unhealthy sandbox returns a `failed` record instead of throwing. Fail the
+      // task so the tick() cascade + maybeFinishGoal halt the goal — do NOT
+      // overwrite it back to `waiting`, and do NOT crash the hire loop (other
+      // agents still provision).
+      if (record.status === "failed") {
+        task.status = "failed";
+        task.finishedAt = new Date().toISOString();
+        bus.post({ threadId: goal.id, from: "ceo", kind: "system", body: `Could not provision ${role.spec.name} — ${record.log[record.log.length - 1]?.message ?? "provisioning failed"}. Skipping; the goal will halt if this agent was required.` });
+      }
       this.tasks.set(task.id, task);
       this.emitTask(task);
-      if (task.dependsOn.length > 0) {
+      if (record.status !== "failed" && task.dependsOn.length > 0) {
         record.status = "waiting";
         registry.upsert(record, `Waiting on ${task.dependsOn.length} upstream task(s)`);
       }
@@ -282,6 +423,7 @@ class Orchestrator extends EventEmitter {
     goal.status = "running";
     this.emitGoal(goal);
     this.startTicker();
+    this.startHeartbeat();
   }
 
   // --- the demo work loop ---
@@ -291,11 +433,185 @@ class Orchestrator extends EventEmitter {
     this.ticker = setInterval(() => this.tick(), TICK_MS);
   }
 
+  // --- CEO heartbeat: separate clock that reconciles agent state ---
+  // Runs every HEARTBEAT_MS while ANY goal is active (not just tasks).
+  // Reacts to blocked/failed/done transitions. Idempotent via lastHandledStatus.
+  // First tick sweeps stale non-terminal boot records (C14).
+  private startHeartbeat() {
+    if (this.heartbeat) return;
+    this.heartbeat = setInterval(() => this.heartbeatTick(), HEARTBEAT_MS);
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeat) {
+      clearInterval(this.heartbeat);
+      this.heartbeat = undefined;
+    }
+  }
+
+  private async heartbeatTick() {
+    // If no active goals, stop the heartbeat
+    if (!this.anyActiveGoal()) {
+      this.stopHeartbeat();
+      return;
+    }
+
+    const agents = registry.all().filter((a) => a.spec.role !== "ceo");
+
+    // First tick: boot-time stale record sweep (C14)
+    if (this.heartbeatFirstTick) {
+      this.heartbeatFirstTick = false;
+      await this.sweepStaleBootRecords(agents);
+    }
+
+    // Normal reconcile: react to status transitions
+    for (const agent of agents) {
+      const lastHandled = agent.lastHandledStatus;
+      const current = agent.status;
+
+      // Only react on transition
+      if (lastHandled === current) continue;
+
+      // Update lastHandledStatus BEFORE acting (idempotent even if action throws)
+      agent.lastHandledStatus = current;
+      registry.upsert(agent, `CEO heartbeat observed status: ${current}`);
+
+      // React to the new status
+      await this.handleAgentStatusTransition(agent, current);
+    }
+  }
+
+  // Sweep stale non-terminal records loaded from registry.json at boot (C14).
+  // A pre-existing `blocked` with no live escalation → failed/terminated.
+  // A pre-existing `working` whose sandbox is dead → failed.
+  private async sweepStaleBootRecords(agents: AgentRecord[]) {
+    for (const agent of agents) {
+      const inFlight = ["provisioning", "starting", "working", "blocked"] as AgentStatus[];
+      if (!inFlight.includes(agent.status)) continue;
+
+      // Stale blocked: no live escalation for this agent
+      if (agent.status === "blocked") {
+        const pendingEsc = escalations.pending().find((e) => e.agentId === agent.id);
+        if (!pendingEsc) {
+          agent.status = "failed";
+          registry.upsert(agent, "Boot sweep: stale blocked with no live escalation → failed");
+          bus.post({ threadId: "company", from: "ceo", kind: "status", body: `Boot sweep: ${agent.id} was blocked with no pending escalation — marked failed.` });
+        }
+        continue;
+      }
+
+      // Stale working: check if the agent has a live task
+      if (agent.status === "working") {
+        const hasLiveTask = [...this.tasks.values()].some(
+          (t) => t.agentId === agent.id && (t.status === "pending" || t.status === "running")
+        );
+        if (!hasLiveTask) {
+          agent.status = "failed";
+          registry.upsert(agent, "Boot sweep: stale working with no live task → failed");
+          bus.post({ threadId: "company", from: "ceo", kind: "status", body: `Boot sweep: ${agent.id} was working with no task — marked failed.` });
+        }
+        continue;
+      }
+
+      // Stale provisioning/starting: check sandbox health (via Factory health gate)
+      if (agent.status === "provisioning" || agent.status === "starting") {
+        // If it's from a previous session, it has no live task → fail
+        const hasLiveTask = [...this.tasks.values()].some((t) => t.agentId === agent.id);
+        if (!hasLiveTask) {
+          agent.status = "failed";
+          registry.upsert(agent, `Boot sweep: stale ${agent.status} with no task → failed`);
+          bus.post({ threadId: "company", from: "ceo", kind: "status", body: `Boot sweep: ${agent.id} was ${agent.status} with no task — marked failed.` });
+        }
+      }
+    }
+  }
+
+  // Handle a single agent's status transition. Posts one CEO status line per transition.
+  private async handleAgentStatusTransition(agent: AgentRecord, newStatus: AgentStatus) {
+    const goalId = this.findGoalIdForAgent(agent.id);
+    const threadId = goalId ?? "company";
+
+    switch (newStatus) {
+      case "blocked": {
+        // Agent entered blocked (new escalation or first observation)
+        const esc = escalations.pending().find((e) => e.agentId === agent.id);
+        const reason = esc ? esc.reason : "security escalation";
+        bus.post({
+          threadId,
+          from: "ceo",
+          kind: "status",
+          body: `${agent.id} is blocked on a security escalation (${reason}) — holding downstream tasks until operator decides.`,
+        });
+        break;
+      }
+
+      case "failed": {
+        // Agent task failed — halt dependent tasks and report
+        bus.post({
+          threadId,
+          from: "ceo",
+          kind: "status",
+          body: `${agent.id} failed — halting dependent tasks for this goal.`,
+        });
+        // The task ticker's maybeFinishGoal will handle goal finalization
+        if (goalId) this.maybeFinishGoal(goalId);
+        break;
+      }
+
+      case "done": {
+        // Agent completed — check if all peers are done to finalize goal
+        bus.post({
+          threadId,
+          from: "ceo",
+          kind: "status",
+          body: `${agent.id} completed its task.`,
+        });
+        if (goalId) this.maybeFinishGoal(goalId);
+        break;
+      }
+
+      case "terminated": {
+        // Agent terminated (e.g., after escalation denied)
+        bus.post({
+          threadId,
+          from: "ceo",
+          kind: "status",
+          body: `${agent.id} terminated — task session ended.`,
+        });
+        break;
+      }
+    }
+  }
+
+  // Find the goalId for an agent by looking at tasks
+  private findGoalIdForAgent(agentId: string): string | undefined {
+    const task = [...this.tasks.values()].find((t) => t.agentId === agentId);
+    return task?.goalId;
+  }
+
   private tick() {
     let anyActive = false;
     for (const task of this.tasks.values()) {
       if (task.status === "pending") {
         anyActive = true;
+        // A failed dependency can never complete — cascade the failure so the
+        // goal finishes instead of the dependent task waiting forever (which
+        // left the goal stuck "running" and the ticker spinning for good).
+        const upstreamFailed = task.dependsOn.some((d) => this.tasks.get(d)?.status === "failed");
+        if (upstreamFailed) {
+          task.status = "failed";
+          task.finishedAt = new Date().toISOString();
+          const agent = task.agentId ? registry.get(task.agentId) : undefined;
+          if (agent) {
+            // Terminate = session workdir wiped + identity revoked (§5), not just
+            // a status flip, so a skipped agent leaves no session data behind.
+            terminateAgent(agent, "Skipped — an upstream task failed, nothing to build on");
+            bus.post({ threadId: task.goalId, from: agent.id, kind: "system", body: `Skipping "${task.title}" — the task I depend on failed.` });
+          }
+          this.emitTask(task);
+          this.maybeFinishGoal(task.goalId);
+          continue;
+        }
         const ready = task.dependsOn.every((d) => this.tasks.get(d)?.status === "done");
         if (ready) this.startTask(task);
       } else if (task.status === "running") {
@@ -351,14 +667,32 @@ class Orchestrator extends EventEmitter {
         task.output = url;
       } else if (agent.spec.role === "copywriter") {
         task.output = await runCopywriter(agent, task, niche, this.research.get(task.goalId) ?? [], onProgress);
+      } else {
+        // Any other library role: generic gated artifact turn. Upstream task
+        // outputs travel as named handoff sections (MetaGPT SOP-style).
+        const upstream = task.dependsOn
+          .map((d) => this.tasks.get(d))
+          .filter((t): t is Task => Boolean(t))
+          .map((t) => {
+            const spec = t.agentId ? registry.get(t.agentId)?.spec : undefined;
+            const data = typeof t.outputData === "string"
+              ? t.outputData
+              : t.outputData != null ? JSON.stringify(t.outputData).slice(0, 2000) : "";
+            const output = (t.output && t.output.length >= data.length ? t.output : data) || t.output || "";
+            return { role: spec?.role ?? "upstream", handoff: spec?.handoff, output };
+          });
+        task.output = await runGenericRole(agent, task, niche, upstream, onProgress);
+        task.outputData = task.output;
       }
       this.completeTask(task, agent, "done");
     } catch (err: any) {
       task.status = "failed";
       task.finishedAt = new Date().toISOString();
       agent.status = "failed";
-      registry.upsert(agent, `Task failed: ${err.message}`);
-      bus.post({ threadId: task.goalId, from: agent.id, kind: "system", body: `Task failed: ${err.message}` });
+      const human = friendlyError(err.message);
+      endAgentSession(agent); // §3: wipe the session workdir on failure
+      registry.upsert(agent, `Task failed: ${human}`);
+      bus.post({ threadId: task.goalId, from: agent.id, kind: "system", body: `Task failed: ${human}` });
       this.emitTask(task);
       this.maybeFinishGoal(task.goalId);
     } finally {
@@ -371,6 +705,7 @@ class Orchestrator extends EventEmitter {
     task.status = "done";
     task.finishedAt = new Date().toISOString();
     agent.status = "done";
+    endAgentSession(agent); // §3: wipe the session workdir on completion
     registry.upsert(agent, `Task complete: ${task.title}`);
     this.emitTask(task);
     this.maybeFinishGoal(task.goalId);
@@ -391,6 +726,7 @@ class Orchestrator extends EventEmitter {
       task.finishedAt = new Date().toISOString();
       if (agent) {
         agent.status = "done";
+        endAgentSession(agent); // §3: wipe the session workdir on completion
         registry.upsert(agent, `Task complete: ${task.title}`);
         bus.post({ threadId: task.goalId, from: agent.id, kind: "finding", body: this.milestoneMsg(agent, task, "done") });
       }
@@ -404,25 +740,31 @@ class Orchestrator extends EventEmitter {
       .filter((t) => t.goalId === task.goalId && t.dependsOn.includes(task.id))
       .map((t) => t.agentId)
       .filter(Boolean);
-    // C11: sim copy must tell the SAME story as the real path — counts come
-    // from the actual research output, never invented.
     const found = this.research.get(task.goalId)?.length ?? 0;
-    const built = Math.min(found || 3, 3); // real store-builder creates up to 3 products, 0 collections
+    const built = Math.min(found || 3, 3);
+    // SIM-ONLY chatter (advance() never runs for real tasks). Every line says
+    // so — a fabricated "finding" with no sim marker is a lie with a green
+    // badge next to it. No invented statistics.
     switch (agent.spec.role) {
       case "research":
         return phase === "mid"
-          ? "Signal so far: product clusters trending up 30d; margins look best in the mid-price band. Full shortlist coming."
-          : `Research complete — ${found || "a shortlist of"} products with prices, images and positioning posted to this thread${peers.length ? ` for ${peers.join(" & ")}` : ""}.`;
+          ? "Scanning the niche catalog and clustering candidates — shortlist forming. (simulated)"
+          : `Research complete — a ${found || 3}-product shortlist with prices and positioning${peers.length ? `, handed to ${peers.join(" & ")}` : ""}. (simulated)`;
       case "store-builder":
         return phase === "mid"
-          ? `${Math.max(built - 1, 1)}/${built} products created; wiring images and variants now.`
-          : `Store populated: ${built} products, theme configured. Preview: https://agentcorp-dev.myshopify.com (simulated — connect Shopify in BUSINESS SETUP for a real build)`;
+          ? `${Math.max(built - 1, 1)}/${built} products staged; images and variants next. (simulated)`
+          : `Store populated: ${built} products, 0 collections, theme configured. Preview: https://agentcorp-dev.myshopify.com (simulated — connect Shopify in BUSINESS SETUP for a real build)`;
       case "copywriter":
         return phase === "mid"
-          ? `Brand voice locked; descriptions in progress for ${found || built} products.`
-          : `Copy delivered for ${found || built} products plus homepage hero.`;
-      default:
+          ? `Brand voice locked; descriptions in progress for ${found || built} products. (simulated)`
+          : `Copy delivered for ${found || built} products plus homepage hero. (simulated — connect a model key for real copy)`;
+      default: {
+        // Library roles (software-shipping, seo, support, fact-check…) declare
+        // their own sim-mode milestone copy; generic line only if none exists.
+        const m = milestoneFor(agent.spec.role, this.niche.get(task.goalId) ?? "the target market");
+        if (m) return phase === "mid" ? m.mid : m.done;
         return phase === "mid" ? "Halfway — interim notes posted." : `Done: ${task.title}`;
+      }
     }
   }
 
@@ -488,6 +830,8 @@ class Orchestrator extends EventEmitter {
   // Default true = full fresh demo.
   reset(wipeMemory = true) {
     if (this.ticker) { clearInterval(this.ticker); this.ticker = undefined; }
+    if (this.heartbeat) { clearInterval(this.heartbeat); this.heartbeat = undefined; }
+    this.heartbeatFirstTick = true;
     this.tasks.clear();
     this.goals.clear();
     this.niche.clear();
@@ -498,10 +842,36 @@ class Orchestrator extends EventEmitter {
     this.pendingPlans.clear();
     this.planResolvers.forEach((r) => r(false));
     this.planResolvers.clear();
+    this.lastResearchId = undefined;
     escalations.clear();
+    clearRevocations(); // fresh identity-revocation ledger each demo
     if (wipeMemory) runMemory.clear();
+    // Full reset re-runs onboarding: the intake questions (niche, what you
+    // already have, starter team) are part of every fresh demo, not one-time
+    // setup. keepMemory resets preserve the profile along with the learning.
+    if (wipeMemory) clearCompanyProfile();
     bus.clear();
     registry.clear();
+  }
+
+  // Called once at server boot. The registry persists agents across restarts,
+  // but tasks live in memory — so after a restart, agents can be stranded
+  // showing "working"/"blocked" with no task behind them (zombie rows whose
+  // buttons resolve nothing). Reconcile: any in-flight agent with no live task
+  // is marked terminated with an honest log line.
+  reconcileStaleAgents() {
+    const inFlight = new Set(["provisioning", "starting", "working", "blocked"]);
+    for (const agent of registry.all()) {
+      if (agent.spec.role === "ceo") {
+        if (agent.status !== "waiting") { agent.status = "waiting"; registry.upsert(agent, "Server restarted — CEO back to waiting"); }
+        continue;
+      }
+      if (inFlight.has(agent.status) && ![...this.tasks.values()].some((t) => t.agentId === agent.id && (t.status === "pending" || t.status === "running"))) {
+        // Stale in-flight record from a prior process: terminate it (wipe session
+        // workdir + revoke identity, §5) rather than leave a zombie row.
+        terminateAgent(agent, "Server restarted — this agent's task did not survive; hire again with a new goal");
+      }
+    }
   }
 
   private emitTask(task: Task) { this.emit("task", task); }
