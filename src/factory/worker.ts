@@ -20,6 +20,7 @@ import { escalations } from "../security/escalations.js";
 import { governance } from "../governance/governance.js";
 import { registry } from "../registry/registry.js";
 import { bus } from "../bus/bus.js";
+import { executionClassOf, type OutputSchema, type PlanContext, type RoleTemplate, renderUpstream } from "../roles/library.js";
 
 export interface Product { title: string; price: number; image?: string }
 
@@ -112,12 +113,20 @@ export function resolveBrain(): ModelBackend | null {
   return null;
 }
 
+// Mode is now derived from the role's execution class (worker-capability §1),
+// not a hardcoded role list — a new pure-LLM role needs only a library entry.
 export function workerMode(role: string): "real" | "sim" {
   if (process.env.SIM_MODE === "1") return "sim";
-  if (role === "research") return "real";
-  if (role === "store-builder") return process.env.SHOPIFY_ADMIN_TOKEN && process.env.SHOPIFY_STORE_URL ? "real" : "sim";
-  if (role === "copywriter") return resolveBrain() ? "real" : "sim";
-  return "sim";
+  switch (executionClassOf(role)) {
+    case "broker-ingest":
+      return "real";
+    case "tool-workflow":
+      return process.env.SHOPIFY_ADMIN_TOKEN && process.env.SHOPIFY_STORE_URL ? "real" : "sim";
+    case "pure-LLM":
+      return resolveBrain() ? "real" : "sim";
+    default:
+      return "sim";
+  }
 }
 
 // Gate helper: scan content; flagged -> escalate and await the human. Returns
@@ -176,9 +185,136 @@ export async function gateOrEscalate(agent: AgentRecord, content: string, kind: 
   return false;
 }
 
+// --- handoff contract (worker-capability §4) --------------------------------
+// Dependency edges carry DATA, not just timing. Each outputSchema tag has one
+// validator; upstream output is validated BEFORE it feeds a downstream prompt.
+// An empty [] or "" must NOT cross an edge silently — that is the bug where a
+// copywriter "succeeds" on zero products.
+
+export type HandoffResult = { ok: true; value: unknown } | { ok: false; reason: string };
+
+export function validateOutput(schema: OutputSchema, data: unknown): HandoffResult {
+  switch (schema) {
+    case "products": {
+      if (!Array.isArray(data) || data.length === 0) return { ok: false, reason: "no products produced (empty result)" };
+      const bad = (data as any[]).findIndex((p) => !p || typeof p.title !== "string" || typeof p.price !== "number");
+      if (bad >= 0) return { ok: false, reason: `product #${bad + 1} missing a string title or numeric price` };
+      return { ok: true, value: data };
+    }
+    case "text": {
+      if (typeof data !== "string" || data.trim() === "") return { ok: false, reason: "empty text output" };
+      return { ok: true, value: data.trim() };
+    }
+    case "url": {
+      try {
+        const u = new URL(String(data));
+        if (u.protocol !== "https:") return { ok: false, reason: `url is not https (${u.protocol})` };
+        return { ok: true, value: u.toString() };
+      } catch {
+        return { ok: false, reason: "unparseable url" };
+      }
+    }
+  }
+}
+
+// Thrown when a role's own output fails its schema (the producer is at fault).
+// The orchestrator's existing try/catch marks the task failed → goal-halt path.
+export class HandoffError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "HandoffError";
+  }
+}
+
+// Validate a role's produced output against its schema. Throws HandoffError on
+// empty/invalid so the producing task fails honestly instead of shipping junk.
+export function parseOutput(schema: OutputSchema, data: unknown): unknown {
+  const r = validateOutput(schema, data);
+  if (!r.ok) throw new HandoffError(`output failed "${schema}" schema: ${r.reason}`);
+  return r.value;
+}
+
+// Validate an UPSTREAM edge before building a downstream prompt. Throws
+// HandoffError (goal-halt) rather than let an empty/invalid handoff cross.
+export function assertHandoff(schema: OutputSchema, upstream: unknown, edge: string): unknown {
+  const r = validateOutput(schema, upstream);
+  if (!r.ok) throw new HandoffError(`handoff halted on ${edge}: ${r.reason}`);
+  return r.value;
+}
+
+// --- shared model-dispatch seam ---------------------------------------------
+// buildPrompt → scan(user_prompt) → dispatch → scan(model_response). EVERY role
+// that talks to a model routes its I/O through here, so the scan→escalate seam
+// (gateOrEscalate) is applied identically everywhere.
+
+export interface ExecOptions {
+  brain?: ModelBackend | null; // inject a backend (tests); default resolveBrain()
+  maxTokens?: number;
+}
+
+async function dispatchModel(agent: AgentRecord, task: Task, prompt: string, opts: ExecOptions = {}): Promise<string> {
+  if (!(await gateOrEscalate(agent, prompt, "user_prompt", task.goalId, "Model prompt"))) throw new Error("prompt quarantined by security policy");
+  const brain = opts.brain ?? resolveBrain();
+  if (!brain) throw new Error("no model brain available — paste a worker key in Connections (this role needs an LLM)");
+  const out = await brain.complete(prompt, { model: modelFor(brain), levelId: "worker", trial: 1, maxTokens: opts.maxTokens ?? 300 });
+  if (!(await gateOrEscalate(agent, out.text, "model_response", task.goalId, "Model response"))) throw new Error("response quarantined by security policy");
+  return out.text.trim();
+}
+
+// --- generic executor (worker-capability §2) --------------------------------
+// ONE pipeline for every role, selected by execution class. Pure-LLM roles run
+// with NOTHING but their promptFor + outputSchema — no per-role branch here or
+// in the orchestrator. research/store-builder keep their specialized pre/post
+// (broker ingest; Shopify calls) but route model I/O through the same seam.
+export async function executeRole(
+  agent: AgentRecord,
+  task: Task,
+  tmpl: RoleTemplate,
+  ctx: PlanContext,
+  upstream: unknown,
+  onProgress: (p: number) => void,
+  opts: ExecOptions = {},
+): Promise<unknown> {
+  switch (tmpl.executionClass) {
+    case "broker-ingest": {
+      // Harness fetches + scans, model summarizes; returns validated products.
+      const products = await runResearch(agent, task, ctx.niche, onProgress, opts);
+      return parseOutput(tmpl.outputSchema, products);
+    }
+    case "tool-workflow": {
+      // Consumes validated upstream products, drives allowlisted tool calls.
+      const products = assertHandoff("products", upstream, `upstream → ${tmpl.role}`) as Product[];
+      const url = await runStoreBuilder(agent, task, products, onProgress);
+      return parseOutput(tmpl.outputSchema, url);
+    }
+    case "pure-LLM":
+      return runPureLLM(agent, task, tmpl, ctx, upstream, onProgress, opts);
+  }
+}
+
+// Pure-LLM role: prompt in (objective + validated upstream), completion out.
+export async function runPureLLM(
+  agent: AgentRecord,
+  task: Task,
+  tmpl: RoleTemplate,
+  ctx: PlanContext,
+  upstream: unknown,
+  onProgress: (p: number) => void,
+  opts: ExecOptions = {},
+): Promise<string> {
+  onProgress(15);
+  const prompt = tmpl.promptFor(ctx, upstream);
+  onProgress(30);
+  const text = await dispatchModel(agent, task, prompt, { brain: opts.brain, maxTokens: tmpl.reasoning === "high" ? 500 : 300 });
+  onProgress(90);
+  const value = parseOutput(tmpl.outputSchema, text) as string;
+  bus.post({ threadId: task.goalId, from: agent.id, kind: "finding", body: `${tmpl.role} complete:\n${value.slice(0, 500)}` });
+  return value;
+}
+
 // --- role implementations (real path) ---
 
-export async function runResearch(agent: AgentRecord, task: Task, niche: string, onProgress: (p: number) => void): Promise<Product[]> {
+export async function runResearch(agent: AgentRecord, task: Task, niche: string, onProgress: (p: number) => void, opts: ExecOptions = {}): Promise<Product[]> {
   onProgress(10);
   bus.post({ threadId: task.goalId, from: agent.id, kind: "status", body: `Sourcing ${niche} products — ${researchSourceLabel()}` });
 
@@ -190,19 +326,22 @@ export async function runResearch(agent: AgentRecord, task: Task, niche: string,
   }));
   onProgress(50);
 
+  // Handoff contract §4: an empty research result must NOT cross the edge
+  // silently (that let a downstream copywriter "succeed" on zero products).
+  // Fail the research task here → orchestrator's failure cascade halts the goal.
+  parseOutput("products", products);
+
   // Ingested external content goes through the gate before anyone reasons on it.
   const ok = await gateOrEscalate(agent, JSON.stringify(rawProducts).slice(0, 2000), "ingested_document", task.goalId, "External research data ingested");
   if (!ok) throw new Error("ingested data quarantined by security policy");
   onProgress(65);
 
   let summary: string;
-  const brain = resolveBrain();
+  const brain = opts.brain ?? resolveBrain();
   if (brain) {
     const prompt = `You are a retail research analyst. In 3 sentences, summarize the opportunity for a "${niche}" store given these products (title/price): ${products.map((p) => `${p.title} ($${p.price})`).join("; ")}. Be concrete about price band and which 3 products to lead with.`;
-    if (!(await gateOrEscalate(agent, prompt, "user_prompt", task.goalId, "Model prompt"))) throw new Error("prompt quarantined");
-    const out = await brain.complete(prompt, { model: modelFor(brain), levelId: "worker", trial: 1, maxTokens: 300 });
-    if (!(await gateOrEscalate(agent, out.text, "model_response", task.goalId, "Model response"))) throw new Error("response quarantined");
-    summary = out.text.trim();
+    // Route model I/O through the shared seam (same scan→escalate order everywhere).
+    summary = await dispatchModel(agent, task, prompt, { brain, maxTokens: 300 });
   } else {
     const sorted = [...products].sort((a, b) => a.price - b.price);
     const mid = sorted.slice(Math.floor(sorted.length / 3), Math.floor(sorted.length / 3) + 3);
@@ -214,6 +353,8 @@ export async function runResearch(agent: AgentRecord, task: Task, niche: string,
 }
 
 export async function runStoreBuilder(agent: AgentRecord, task: Task, products: Product[], onProgress: (p: number) => void): Promise<string> {
+  // Handoff contract §4: refuse to build a store on an empty/invalid shortlist.
+  assertHandoff("products", products, "research → store-builder");
   const token = process.env.SHOPIFY_ADMIN_TOKEN!;
   const store = process.env.SHOPIFY_STORE_URL!.replace(/\/$/, "");
   const picks = products.slice(0, 3);
@@ -236,16 +377,16 @@ export async function runStoreBuilder(agent: AgentRecord, task: Task, products: 
   return store;
 }
 
-export async function runCopywriter(agent: AgentRecord, task: Task, niche: string, products: Product[], onProgress: (p: number) => void): Promise<string> {
-  const brain = resolveBrain()!;
+export async function runCopywriter(agent: AgentRecord, task: Task, niche: string, products: Product[], onProgress: (p: number) => void, opts: ExecOptions = {}): Promise<string> {
+  // Handoff contract §4: don't write copy for a store with nothing in it.
+  assertHandoff("products", products, "research → copywriter");
   onProgress(20);
   const prompt = `Write a punchy one-line product description for each of these ${niche} products (format "Title — description"): ${products.slice(0, 3).map((p) => p.title).join("; ")}`;
-  if (!(await gateOrEscalate(agent, prompt, "user_prompt", task.goalId, "Model prompt"))) throw new Error("prompt quarantined");
-  const out = await brain.complete(prompt, { model: modelFor(brain), levelId: "worker", trial: 1, maxTokens: 300 });
-  if (!(await gateOrEscalate(agent, out.text, "model_response", task.goalId, "Model response"))) throw new Error("response quarantined");
+  const text = await dispatchModel(agent, task, prompt, { brain: opts.brain, maxTokens: 300 });
   onProgress(90);
-  bus.post({ threadId: task.goalId, from: agent.id, kind: "finding", body: `Copy delivered:\n${out.text.trim().slice(0, 500)}` });
-  return out.text.trim();
+  const value = parseOutput("text", text) as string;
+  bus.post({ threadId: task.goalId, from: agent.id, kind: "finding", body: `Copy delivered:\n${value.slice(0, 500)}` });
+  return value;
 }
 
 function modelFor(brain: ModelBackend): string {
