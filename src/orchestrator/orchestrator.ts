@@ -149,7 +149,6 @@ export class Orchestrator extends EventEmitter {
       this.emitGoal(goal);
       return goal;
     }
-
     // Concurrency refusal (factory-provisioning §6, C16): one company, one job at
     // a time for the demo. A second goal would spawn a second agent record per
     // role sharing ONE per-role sandbox + niche-keyed run memory — a live race on
