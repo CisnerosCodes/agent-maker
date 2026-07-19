@@ -4,9 +4,10 @@
 // attack corpus at the real gate and asserts on the outcome. See
 // specs/security/adversarial-harness.spec.md.
 //
-//   npm run adversarial            # full corpus
-//   npm run adversarial -- --smoke # one case per suite (fast, pre-rehearsal)
-//   npm run adversarial -- --strict # treat not-yet-wired suites as failures
+//   npm run adversarial              # full corpus (--mode full)
+//   npm run adversarial -- --mode scan  # offline-safe floor only (no sandbox/brain)
+//   npm run adversarial -- --smoke   # one case per suite (fast, pre-rehearsal)
+//   npm run adversarial -- --strict  # treat not-yet-wired suites as failures
 //
 // Framework-light on purpose (spec §2): a plain runner a human runs on demand,
 // legible to a judge reading it. Exit non-zero on any assertion failure so it is
@@ -43,6 +44,32 @@ const REPORT = join(HERE, "report");
 const ARGS = new Set(process.argv.slice(2));
 const SMOKE = ARGS.has("--smoke");
 const STRICT = ARGS.has("--strict");
+
+// --mode scan|full (default full). `scan` runs only the offline-safe boundary
+// suites (scan()/sim-seam — inject/clean/exfil/dispatch-seam/egress/cred-hygiene)
+// and marks the live-only rows pending, so it NEVER needs a live sandbox/brain and
+// always terminates fast (the pre-demo T-10 floor check, plan §2.1). `full` also
+// attempts scanner-down (live HL) and learning-causal (live brain).
+type Mode = "scan" | "full";
+const MODE: Mode = (() => {
+  const argv = process.argv.slice(2);
+  const i = argv.indexOf("--mode");
+  const v = i >= 0 ? argv[i + 1] : undefined;
+  if (v === "scan") return "scan";
+  if (v && v !== "full") console.warn(`[adversarial] unknown --mode '${v}', defaulting to full`);
+  return "full";
+})();
+
+// scan mode is the DETERMINISTIC floor check (plan §2.1 "floor detects, no crash").
+// Strip the HL OAuth creds so the gate's per-call hlConfigured() returns false and
+// scanning stays on the heuristic floor — the pre-demo check must never depend on a
+// live scanner's health (a 401'ing key would otherwise fail every benign case
+// closed). `full` keeps the creds and exercises the authoritative HL path.
+if (MODE === "scan") {
+  delete process.env.HIDDENLAYER_CLIENT_ID;
+  delete process.env.HIDDENLAYER_CLIENT_SECRET;
+}
+
 const HL_LIVE = hlConfigured();
 
 // ---- types ----------------------------------------------------------------
@@ -171,17 +198,26 @@ async function suiteLearningCausal(): Promise<SuiteResult> {
   // Clear any prior runs for this niche to start fresh
   runMemory.clear();
 
+  // This suite needs goals to actually COMPLETE — it measures a run-over-run
+  // timing delta. Offline (or with dead model creds) a goal never terminates, so
+  // if any run times out we abandon and report pending, never hang the harness.
+  const bail = () => {
+    delete process.env.MEMORY_RETRIEVAL;
+    governance.setMode(originalMode);
+    return pending("learning-causal", "goal did not complete in 40s — needs a live brain (offline models 401/402)");
+  };
+
   // --- Run 1: Memory ON (default) - first run, no prior memory ---
   const start1 = Date.now();
   const goal1 = await orchestrator.startGoal(goalText);
-  await waitForGoalDone(goal1.id);
+  if (!(await waitForGoalDone(goal1.id))) return bail();
   const time1 = Math.round((Date.now() - start1) / 1000);
 
   // --- Run 2: Memory ON - should reuse research from run 1 ---
   const start2 = Date.now();
   orchestrator.reset(false); // keep memory
   const goal2 = await orchestrator.startGoal(goalText);
-  await waitForGoalDone(goal2.id);
+  if (!(await waitForGoalDone(goal2.id))) return bail();
   const time2 = Math.round((Date.now() - start2) / 1000);
 
   // --- Run 3: Memory OFF - should re-research (delta collapses) ---
@@ -189,7 +225,7 @@ async function suiteLearningCausal(): Promise<SuiteResult> {
   const start3 = Date.now();
   orchestrator.reset(false); // keep memory but retrieval is disabled
   const goal3 = await orchestrator.startGoal(goalText);
-  await waitForGoalDone(goal3.id);
+  if (!(await waitForGoalDone(goal3.id))) return bail();
   const time3 = Math.round((Date.now() - start3) / 1000);
   delete process.env.MEMORY_RETRIEVAL;
 
@@ -219,19 +255,32 @@ async function suiteLearningCausal(): Promise<SuiteResult> {
   return tally("learning-causal", [c]);
 }
 
-function waitForGoalDone(goalId: string): Promise<void> {
+// Resolves true when the goal reaches a terminal state, false on timeout. NEVER
+// hangs — offline (or with dead model creds) a goal can stay `running` forever
+// (workers retry brains that 401/402), so an unbounded poll would wedge the whole
+// harness. The caller decides how to report a timeout (learning-causal → pending).
+function waitForGoalDone(goalId: string, timeoutMs = 40000): Promise<boolean> {
   return new Promise(async (resolve) => {
     const { orchestrator } = await import("../../src/orchestrator/orchestrator.js");
+    const t0 = Date.now();
     const check = () => {
       const goal = orchestrator.goals.get(goalId);
       if (goal && (goal.status === "done" || goal.status === "failed")) {
-        resolve();
+        resolve(true);
+      } else if (Date.now() - t0 > timeoutMs) {
+        resolve(false);
       } else {
         setTimeout(check, 500);
       }
     };
     check();
   });
+}
+
+// Pending SuiteResult — an env-gated suite that cannot run here (no live brain /
+// no HL creds). Not a failure: it's honestly declared unrun (mirrors scanner-down).
+function pending(name: string, _note: string): SuiteResult {
+  return { name, status: "pending", pass: true, passed: 0, total: 0, note: "—", cases: [] };
 }
 
 // Data-leakage tier: embed each reserved exfil host in a leak payload and assert
@@ -495,21 +544,30 @@ async function main() {
 
   console.log("── adversarial harness ────────────────────────────────────────");
   console.log(
-    `mode: ${HL_LIVE ? "LIVE HiddenLayer (authoritative)" : "HEURISTIC FLOOR (no HL creds — verdicts capped at flagged, categories heuristic)"}` +
+    `mode: ${MODE}  ·  ` +
+      `${HL_LIVE ? "LIVE HiddenLayer (authoritative)" : "HEURISTIC FLOOR (no HL creds — verdicts capped at flagged, categories heuristic)"}` +
       `${SMOKE ? "  ·  --smoke" : ""}`,
   );
   console.log("");
 
   const all: SuiteResult[] = [];
+  // Offline-safe boundary suites — run in BOTH modes (scan()/sim-seam only):
   all.push(await suiteInject());
   all.push(await suiteClean());
   all.push(await suiteExfil());
-  all.push(await suiteScannerDown());
   // Live via the F3 sim seam (test-only fake subprocess, real gate.scan):
   all.push(await suiteDispatchSeam());
   all.push(await suiteEgress());
   all.push(await suiteCredHygiene());
-  all.push(await suiteLearningCausal());
+  // Live-only suites — attempted in `full`, forced pending in `scan` so the floor
+  // check never needs a live sandbox/brain and always terminates fast.
+  if (MODE === "full") {
+    all.push(await suiteScannerDown());
+    all.push(await suiteLearningCausal());
+  } else {
+    all.push(pending("scanner-down", "skipped in --mode scan (needs live HL)"));
+    all.push(pending("learning-causal", "skipped in --mode scan (needs live brain)"));
+  }
 
   const suites = all.filter((s) => s.status === "run");
   const selfPending = all.filter((s) => s.status === "pending");

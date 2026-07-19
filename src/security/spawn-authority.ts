@@ -37,7 +37,7 @@ export const AUTHORITY_TABLE: Readonly<Record<string, RoleAuthority>> = Object.f
   research: {
     allowedCredentials: [], // broker-ingest: harness-brokered fetch, no issued credential
     policyTemplate: "worker-research.yaml",
-    allowedTools: ["apify", "web-fetch"], // apify is harness-brokered (env-resolved), not raw sandbox egress
+    allowedTools: ["web-fetch"],
   },
   "store-builder": {
     allowedCredentials: ["SHOPIFY_ADMIN_TOKEN"],
