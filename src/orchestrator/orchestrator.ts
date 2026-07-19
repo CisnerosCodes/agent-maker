@@ -27,12 +27,20 @@ import { nicheFor } from "../config/niche.js";
 const CEO_ID = "ceo-01";
 const TICK_MS = 1200;
 
-// Pull egress hosts out of a poisoned payload so the tightening loop has a
-// concrete deny target. Case-normalized + deduped; strips any path/port-less host
-// from a URL. No URL → no host → tightening is a no-op (never invents a target).
+// Pull egress endpoints out of a poisoned payload so the tightening loop has a
+// concrete deny target. Returns host:port tokens (OpenShell's --add-deny grammar
+// is host:port:METHOD:path_glob and the port must be a literal integer — verified
+// against openshell 0.0.72). Port is taken from the URL, else derived from the
+// scheme (https→443, http→80). Case-normalized + deduped. No URL → no endpoint →
+// tightening is a no-op (never invents a target).
 function extractHosts(text: string): string[] {
   const set = new Set<string>();
-  for (const m of text.matchAll(/https?:\/\/([^/\s"'<>]+)/gi)) set.add(m[1].toLowerCase());
+  for (const m of text.matchAll(/(https?):\/\/([^/\s"'<>:]+)(?::(\d+))?/gi)) {
+    const scheme = m[1].toLowerCase();
+    const host = m[2].toLowerCase();
+    const port = m[3] ?? (scheme === "http" ? "80" : "443");
+    set.add(`${host}:${port}`);
+  }
   return [...set];
 }
 
