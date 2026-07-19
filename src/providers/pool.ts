@@ -120,7 +120,7 @@ export const BRAIN_PROVIDERS: BrainProvider[] = [
     envKeys: ["NVIDIA_INFERENCE_API_KEY"],
     pin: "nvidia",
     priority: 3,
-    defaultModel: () => "nvidia/llama-3.1-nemotron-70b-instruct",
+    defaultModel: () => "nvidia/nemotron-3-super-120b-a12b",
     make: () => new OpenAICompatBackend(process.env.NVIDIA_INFERENCE_API_KEY!, process.env.NVIDIA_API_BASE ?? undefined),
   },
   {
