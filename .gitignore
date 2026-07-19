@@ -12,3 +12,5 @@ test/adversarial/report/*
 .serena/
 docs/Hackathon_Docs.md
 .claude/worktrees/
+.env.verify
+data-verify/
