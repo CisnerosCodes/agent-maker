@@ -25,8 +25,53 @@
 // constructors. It never logs, returns, or posts a key value; health reports
 // carry booleans, provider ids and friendly error text only.
 
+import { readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
 import type { ModelBackend } from "../evals/types.js";
 import { AnthropicApiBackend, ClaudeCliBackend, OpenAICompatBackend } from "../evals/backends.js";
+
+// --- benchmark gate (the "only models that clear the ladder run your workers"
+// claim, made real). The eval runner (src/evals/run.ts) persists each model's
+// ladder result to data/evals/model-cache.json keyed by model id. This gate
+// reads it and DROPS a provider whose resolved model was benchmarked and cleared
+// FEWER than WORKER_MIN_LADDER levels. A proven-weak model never runs workers —
+// the pool returns no eligible brain and the worker degrades to LABELED sim
+// (honest), it never crashes the goal. An UNbenchmarked model passes through
+// (advisory) so a fresh clone with an empty cache is not bricked. An explicit
+// WORKER_BACKEND pin bypasses the gate (operator intent, surfaced in status).
+const MIN_LADDER = Math.max(0, Number(process.env.WORKER_MIN_LADDER ?? 8)); // levels a model must clear to be hired
+const EVALS_DIR = process.env.EVALS_DIR ?? "./data/evals";
+
+export interface LadderVerdict {
+  benchmarked: boolean;      // true when a cached ladder run exists for the model
+  cleared: number;           // levels fully cleared (ISR === 1)
+  total: number;
+  breakingPoint: string | null;
+  passed: boolean;           // cleared >= MIN_LADDER (unbenchmarked -> true, advisory)
+}
+
+// Ladder result for a model id, from the eval cache. null when the file/entry is
+// absent. Read fresh each call (small file) so a mid-session re-run takes effect.
+export function ladderFor(model: string): LadderVerdict | null {
+  try {
+    const path = join(EVALS_DIR, "model-cache.json");
+    if (!existsSync(path)) return null;
+    const cache = JSON.parse(readFileSync(path, "utf8")) as Record<string, { cleared?: number; total?: number; breakingPoint?: string | null }>;
+    const r = cache[model];
+    if (!r) return null;
+    const cleared = Number(r.cleared ?? 0);
+    return { benchmarked: true, cleared, total: Number(r.total ?? 0), breakingPoint: r.breakingPoint ?? null, passed: cleared >= MIN_LADDER };
+  } catch {
+    return null; // unreadable cache must not brick hiring — treat as unbenchmarked
+  }
+}
+
+// Does a provider clear the ladder bar for the model it would run? Unbenchmarked
+// (no cache entry) -> true (advisory). Benchmarked-and-weak -> false (blocked).
+function benchmarkOk(p: BrainProvider, isFirstChoice: boolean): boolean {
+  const v = ladderFor(modelForAttempt(p, isFirstChoice));
+  return v ? v.passed : true;
+}
 
 export interface BrainProvider {
   id: string;               // stable id ("featherless" | "anthropic" | "nvidia" | "cli" | ...)
@@ -192,15 +237,20 @@ export function brainOrder(): BrainProvider[] {
   // Env-string check (not mode.ts) to keep this module cycle-free.
   if (process.env.SIM_MODE === "1" || (process.env.COMPANY_MODE ?? "").trim().toLowerCase() === "demo") return [];
   const { provider, pin } = pinnedBrain();
-  if (pin) return provider ? [provider] : [];
+  if (pin) return provider ? [provider] : []; // pin bypasses the benchmark gate (operator intent)
   const configured = configuredBrains();
+  // Benchmark gate: drop any provider whose resolved model was benchmarked AND
+  // failed the ladder bar. NO fall-through — if every configured brain is a
+  // proven ladder failure, return [] so poolBrain() yields null and workers run
+  // labeled sim (the honest "we don't hire a model that failed the ladder").
+  const eligible = configured.filter((p, i) => benchmarkOk(p, i === 0));
   const now = Date.now();
-  const up = configured.filter((p) => {
+  const up = eligible.filter((p) => {
     const h = healthOf(p.id);
     return h.state !== "down" || (h.downUntil ?? 0) <= now;
   });
   if (up.length) return up;
-  return [...configured].sort(
+  return [...eligible].sort(
     (a, b) => Date.parse(healthOf(a.id).lastFailAt ?? "0") - Date.parse(healthOf(b.id).lastFailAt ?? "0"),
   );
 }
@@ -275,8 +325,10 @@ export function brainPoolStatus() {
     pinnedMissingKeys: missingKeys,
     active: order[0]?.id ?? null,
     order: order.map((p) => p.id),
+    minLadder: MIN_LADDER,
     providers: BRAIN_PROVIDERS.map((p) => {
       const h = healthOf(p.id);
+      const ladder = ladderFor(modelForAttempt(p, false)); // status shows the default-model verdict
       return {
         id: p.id,
         label: p.label,
@@ -291,6 +343,11 @@ export function brainPoolStatus() {
         coolingDownForMs: h.downUntil ? Math.max(0, h.downUntil - Date.now()) : 0,
         lastOkAt: h.lastOkAt ?? null,
         lastFailAt: h.lastFailAt ?? null,
+        // Benchmark gate (WORKER_MIN_LADDER). benchmarked=false => advisory pass.
+        // benchmarked=true & passed=false => this provider is EXCLUDED from hiring.
+        ladder: ladder
+          ? { benchmarked: true, cleared: ladder.cleared, total: ladder.total, breakingPoint: ladder.breakingPoint, passed: ladder.passed }
+          : { benchmarked: false, cleared: 0, total: 0, breakingPoint: null, passed: true },
       };
     }),
   };

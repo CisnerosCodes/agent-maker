@@ -162,6 +162,45 @@ export function __resetCli(): void {
   cli = runCli;
 }
 
+// --- toolchain probe (auto-containment default) ---------------------------
+//
+// The Factory defaults WORKER_MODE to AUTO: contain via OpenShell when the
+// NemoClaw + OpenShell binaries are actually installed, else run local
+// (uncontained, honestly labeled) so the offline demo still works. This probe
+// answers "is the toolchain present?" WITHOUT onboarding anything — it runs the
+// cheapest read-only command for each binary and treats an ENOENT (binary
+// missing) as unavailable. A present-but-unhealthy install still returns true
+// here; spawnWorker's Phase B/C health gate is what fails THAT closed. Cached
+// once per process (the install state does not change mid-run).
+let toolchainCache: boolean | null = null;
+
+async function binaryPresent(cmd: string, args: string[]): Promise<boolean> {
+  const r = await cli(cmd, args, STATUS_TIMEOUT_MS);
+  // runCli surfaces a missing binary as { code: null, stderr: "...ENOENT..." }.
+  // Anything that produced an exit code or JSON means the binary ran.
+  const missing = r.code === null && /ENOENT|not recognized|not found|no such file/i.test(r.stderr);
+  return !missing;
+}
+
+/**
+ * True when BOTH `nemoclaw` and `openshell` resolve on PATH (auto-containment
+ * gate). Read-only probes, never onboards. Cached per process; reset in tests.
+ */
+export async function toolchainAvailable(): Promise<boolean> {
+  if (toolchainCache !== null) return toolchainCache;
+  const [nemo, shell] = await Promise.all([
+    binaryPresent("nemoclaw", ["sandbox", "status", "__toolchain_probe__", "--json"]),
+    binaryPresent("openshell", ["policy", "get", "__toolchain_probe__", "--json"]),
+  ]);
+  toolchainCache = nemo && shell;
+  return toolchainCache;
+}
+
+/** Test-only: forget the cached toolchain probe result. */
+export function __resetToolchainCache(): void {
+  toolchainCache = null;
+}
+
 function pathSep(): string {
   return process.platform === "win32" ? ";" : ":";
 }

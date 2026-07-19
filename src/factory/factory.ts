@@ -25,27 +25,39 @@ import path from "node:path";
 import type { AgentRecord, AgentSpec } from "../types.js";
 import { issueIdentity, revokeIdentity } from "../vault/vault.js";
 import { registry } from "../registry/registry.js";
-import { spawnWorker, type WorkerHandle } from "../worker/nemoclaw.js";
+import { spawnWorker, toolchainAvailable, type WorkerHandle } from "../worker/nemoclaw.js";
 
 // Isolation mode (C6 / worker-mode-containment §6). `nemoclaw` drives the real
 // OpenShell sandbox seam and honors the fail-closed health gate (§2: unhealthy →
 // failed). `local` is the break-glass / no-live-sandbox path: the worker is
-// UNCONTAINED but provisioning still succeeds so the offline demo runs — this is
-// the HONEST label for what the old stub Factory already did (it never contained
-// anything), surfaced now instead of faking "contained". Set WORKER_MODE=nemoclaw
-// (with a live NemoClaw/OpenShell install, or the __setCli sim in tests) for the
-// real containment pipeline.
-function containmentMode(): "nemoclaw" | "local" {
-  return process.env.WORKER_MODE === "nemoclaw" ? "nemoclaw" : "local";
+// UNCONTAINED but provisioning still succeeds so the offline demo runs — the
+// HONEST label for a box with no sandbox toolchain.
+//
+// WORKER_MODE resolution:
+//   nemoclaw  — FORCE containment (real demo box). Provisioning fails closed if
+//               the toolchain is missing/unhealthy — never a silent uncontained run.
+//   local     — FORCE break-glass (explicit uncontained, e.g. offline dev).
+//   unset     — AUTO (default): contain when the NemoClaw + OpenShell binaries are
+//               actually installed, else fall back to local. This makes
+//               containment the default wherever the box can honor it, without
+//               breaking the keyless offline demo on a box that can't.
+async function containmentMode(): Promise<"nemoclaw" | "local"> {
+  const forced = (process.env.WORKER_MODE ?? "").trim().toLowerCase();
+  if (forced === "nemoclaw") return "nemoclaw"; // operator intent — fail closed if unavailable
+  if (forced === "local") return "local";
+  return (await toolchainAvailable()) ? "nemoclaw" : "local";
 }
 
 let warnedLocalOnce = false;
 function warnLocalOnce(): void {
   if (warnedLocalOnce) return;
   warnedLocalOnce = true;
+  const forced = (process.env.WORKER_MODE ?? "").trim().toLowerCase() === "local";
   console.warn(
-    "[Factory] WORKER_MODE is not 'nemoclaw' — workers run LOCAL (UNCONTAINED). " +
-      "Set WORKER_MODE=nemoclaw for OpenShell containment. Sessions are still isolated.",
+    forced
+      ? "[Factory] WORKER_MODE=local — workers run UNCONTAINED (break-glass). Sessions are still isolated."
+      : "[Factory] No NemoClaw/OpenShell toolchain detected — workers run LOCAL (UNCONTAINED). " +
+          "Install the toolchain (or set WORKER_MODE=nemoclaw on a box that has it) for OpenShell containment. Sessions are still isolated.",
   );
 }
 
@@ -105,7 +117,7 @@ export async function createAgent(spec: AgentSpec, parentId: string, taskId?: st
   //    NOT trust an exit code — the handle status is parsed from `sandbox status
   //    --json` + a smoke test inside spawnWorker. Unhealthy → failed (§2), reusing
   //    the F6 "never became healthy" truth rather than a fake ready.
-  const mode = containmentMode();
+  const mode = await containmentMode();
   record.containment = mode;
   if (mode === "nemoclaw") {
     const handle = await assertRoleSandboxHealthy(spec);
@@ -117,7 +129,15 @@ export async function createAgent(spec: AgentSpec, parentId: string, taskId?: st
   } else {
     warnLocalOnce();
     record.sandbox = spec.role; // logical role sandbox name even when local
-    registry.upsert(record, `UNCONTAINED (WORKER_MODE=local) — no OpenShell sandbox; set WORKER_MODE=nemoclaw to contain`);
+    // Distinguish the two ways we land here so the log tells the truth: an
+    // explicit break-glass opt-out vs the AUTO default finding no toolchain.
+    const forcedLocal = (process.env.WORKER_MODE ?? "").trim().toLowerCase() === "local";
+    registry.upsert(
+      record,
+      forcedLocal
+        ? `UNCONTAINED (WORKER_MODE=local, break-glass) — no OpenShell sandbox; unset WORKER_MODE or install the toolchain to contain`
+        : `UNCONTAINED (no NemoClaw/OpenShell toolchain detected) — no OpenShell sandbox; install the toolchain or set WORKER_MODE=nemoclaw to contain`,
+    );
   }
 
   // 3. mintSession(role, taskId) — per-task session + isolated, clean workdir so
