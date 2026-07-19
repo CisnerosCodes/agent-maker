@@ -10,6 +10,13 @@
 // Swap point: replace matchPlaybook() with a ModelBackend classifier (same
 // interface as src/evals/backends.ts) to select/compose roles for off-script
 // goals instead of keyword matching.
+//
+// Borrowed patterns (full source map + licenses: docs/BORROWED_PATTERNS.md):
+//  - handoff artifact contracts + the ANYTHING_UNCLEAR channel — MetaGPT (MIT)
+//  - bounded review cycles, "ONE highest-priority issue or Finished" — ChatDev (Apache-2.0)
+//  - playbook decompositions (marketing pipeline, brand-search-optimization,
+//    llm-auditor critic→reviser, customer-service thresholds) — google/adk-samples (Apache-2.0)
+//  - role voice ("vibe") lines — msitarzewski/agency-agents (MIT, © 2025 AgentLand Contributors)
 
 import { companyProfile } from "../config/company.js";
 
@@ -23,6 +30,10 @@ export interface RoleTemplate {
   estimateSec: number;
   dependsOn: number[]; // indices into the playbook's roles array
   reasoning: "low" | "medium" | "high"; // Nemotron thinking budget per role (Sky spec §6.2)
+  // Optional enrichments (additive — engine ignores them except milestoneFor()):
+  handoff?: string; // named artifact this role delivers downstream (MetaGPT SOP-style contract)
+  vibe?: string;    // one-line personality for the agent card (agency-agents)
+  milestones?: (ctx: { niche: string }) => { mid: string; done: string }; // sim-mode chatter for roles without bespoke orchestrator copy
 }
 
 export interface Playbook {
@@ -104,6 +115,187 @@ export const PLAYBOOKS: Playbook[] = [
     ],
   },
   {
+    // ADK brand-search-optimization shape: keywords → live SERP recon → rewrites.
+    id: "seo-optimization",
+    match: /\b(seo|keywords?|search rank(?:ing)?s?|listings?)\b/i,
+    description: "SEO: mine keywords → scout search results → rewrite listings",
+    roles: [
+      {
+        role: "keyword-miner",
+        titleFor: (c) => `Keywords: mine ${c.niche} search terms`,
+        objectiveFor: (c) => `Mine ${c.niche} brand and product keywords from the catalog and competitors; deliver a ranked keyword set labeled by intent.`,
+        tools: ["web-fetch"], credentials: [], policyTemplate: "worker-research.yaml",
+        estimateSec: 22, dependsOn: [], reasoning: "medium",
+        handoff: "ranked keyword set", vibe: "Knows what your customers type before they do.",
+        milestones: (c) => ({
+          mid: `Catalog and competitor terms collected for ${c.niche}; ranking by intent now.`,
+          done: "Keyword set delivered — ranked and intent-labeled for the search scout.",
+        }),
+      },
+      {
+        role: "search-scout",
+        titleFor: () => "SERP recon: what top results do differently",
+        objectiveFor: (c) => `Run the keyword set against live search results for ${c.niche}; capture what top-ranking competitor titles and pages do differently from ours.`,
+        tools: ["web-fetch"], credentials: [], policyTemplate: "worker-research.yaml",
+        estimateSec: 24, dependsOn: [0], reasoning: "medium",
+        handoff: "SERP findings", vibe: "Reads page one of the results so you can own it.",
+        milestones: () => ({
+          mid: "Top-ranking pages captured for the head keywords; diffing against our listings.",
+          done: "SERP findings posted — the gap between our listings and page-one competitors is documented.",
+        }),
+      },
+      {
+        role: "listing-optimizer",
+        titleFor: (c) => `Rewrite: close the search gap for ${c.niche}`,
+        objectiveFor: () => `Rewrite product titles and descriptions to close the gap: compare ours against the top results and propose each rewrite with its reasoning.`,
+        tools: [], credentials: [], policyTemplate: "worker-minimal.yaml",
+        estimateSec: 20, dependsOn: [1], reasoning: "low",
+        handoff: "rewritten listings", vibe: "Every title earns its place on page one.",
+        milestones: () => ({
+          mid: "First rewrites drafted with per-change reasoning; working down the keyword set.",
+          done: "Rewritten listings delivered — each change justified against the SERP findings.",
+        }),
+      },
+    ],
+  },
+  {
+    // ADK customer-service pattern: knowledge base → macros with approval
+    // thresholds (self-approve routine, escalate exceptions) → audit pass.
+    id: "customer-support",
+    match: /\b(support|customer service|helpdesk|help desk|faq|tickets?)\b/i,
+    description: "Customer support: knowledge base → macros with escalation thresholds → audit",
+    roles: [
+      {
+        role: "kb-curator",
+        titleFor: (c) => `Knowledge base: ${c.niche} facts & policies`,
+        objectiveFor: (c) => `Assemble the support knowledge base for ${c.niche}: top customer questions, product facts, refund and shipping policies — with a source for every answer.`,
+        tools: ["web-fetch"], credentials: [], policyTemplate: "worker-research.yaml",
+        estimateSec: 24, dependsOn: [], reasoning: "medium",
+        handoff: "knowledge base", vibe: "Every answer has a receipt.",
+        milestones: () => ({
+          mid: "Top questions and policy facts collected; attaching a source to every answer.",
+          done: "Knowledge base assembled — every answer sourced, ready for the macro writer.",
+        }),
+      },
+      {
+        role: "support-writer",
+        titleFor: () => "Macros & FAQ: replies within policy thresholds",
+        objectiveFor: () => `Write reply macros and the FAQ from the knowledge base. Routine answers within policy thresholds are self-approved; anything above threshold (discounts, exceptions, refunds beyond policy) escalates to the CEO for approval — never self-approved.`,
+        tools: [], credentials: [], policyTemplate: "worker-minimal.yaml",
+        estimateSec: 22, dependsOn: [0], reasoning: "low",
+        handoff: "FAQ + reply macros", vibe: "Kind on the surface, policy-exact underneath.",
+        milestones: () => ({
+          mid: "Routine macros drafted within thresholds; flagging above-threshold cases for escalation.",
+          done: "FAQ and macros delivered — above-threshold exceptions routed to the CEO, not self-approved.",
+        }),
+      },
+      {
+        role: "qa-auditor",
+        titleFor: () => "Audit: verify every macro against the knowledge base",
+        objectiveFor: () => `Verify each macro claim against the knowledge base: report the ONE highest-priority mismatch per pass and hand it back — or conclude Finished.`,
+        tools: [], credentials: [], policyTemplate: "worker-minimal.yaml",
+        estimateSec: 18, dependsOn: [1], reasoning: "medium",
+        handoff: "audit verdict", vibe: "Trusts nothing it hasn't checked twice.",
+        milestones: () => ({
+          mid: "Cross-checking macros against sourced answers; one mismatch flagged so far.",
+          done: "Audit concluded Finished — every macro claim traced back to the knowledge base.",
+        }),
+      },
+    ],
+  },
+  {
+    // ADK llm-auditor shape (critic → reviser) + hello-agents Reflection paradigm:
+    // a staffable quality team the CEO can point at any material.
+    id: "fact-check",
+    match: /\b(fact-?check|verify|audit)\b/i,
+    description: "Fact-check: extract & verify claims → revise only what failed",
+    roles: [
+      {
+        role: "critic",
+        titleFor: (c) => `Critic: verify claims in ${c.goalText.slice(0, 40)}`,
+        objectiveFor: (c) => `Extract every verifiable claim in the source material for "${c.goalText}", check each against independent sources, and deliver a per-claim verdict (accurate / inaccurate / unverifiable) with citations.`,
+        tools: ["web-fetch"], credentials: [], policyTemplate: "worker-research.yaml",
+        estimateSec: 26, dependsOn: [], reasoning: "high",
+        handoff: "per-claim audit verdicts", vibe: "Splits prose into claims and makes each one prove itself.",
+        milestones: () => ({
+          mid: "Claims extracted; checking each against independent sources.",
+          done: "Audit verdicts delivered — every claim marked accurate, inaccurate, or unverifiable, with citations.",
+        }),
+      },
+      {
+        role: "reviser",
+        titleFor: () => "Reviser: fix only what the critic flagged",
+        objectiveFor: () => `Rewrite the material fixing ONLY the claims the critic flagged — keep everything verified intact, and note each change made.`,
+        tools: [], credentials: [], policyTemplate: "worker-minimal.yaml",
+        estimateSec: 18, dependsOn: [0], reasoning: "medium",
+        handoff: "revised draft", vibe: "Surgical edits, no collateral rewrites.",
+        milestones: () => ({
+          mid: "Correcting flagged claims one by one; verified text untouched.",
+          done: "Revised draft delivered — flagged claims fixed, every change noted, verified content intact.",
+        }),
+      },
+    ],
+  },
+  {
+    // MetaGPT's software-company SOP (PM → Architect → Engineer → QA), each role
+    // handing a named artifact downstream; review bounded ChatDev-style.
+    // NOTE: broad keyword net (app/saas/tool…) — must stay BELOW the narrow
+    // intent playbooks (seo, support, fact-check) so specific goals win.
+    id: "software-shipping",
+    match: /\b(app|web ?app|website|landing page|mvp|saas|prototype|software|api|dashboard|tool)\b/i,
+    description: "Ship software: PRD → design → build → bounded review",
+    roles: [
+      {
+        role: "product-manager",
+        titleFor: (c) => `PRD: requirements for ${c.niche}`,
+        objectiveFor: (c) => `Write the PRD for "${c.goalText}": up to 3 orthogonal product goals, 3-5 scenario-based user stories, and the top-5 requirements ranked P0-P2. End with ANYTHING_UNCLEAR — open questions travel with the artifact instead of being dropped.`,
+        tools: [], credentials: [], policyTemplate: "worker-minimal.yaml",
+        estimateSec: 24, dependsOn: [], reasoning: "high",
+        handoff: "PRD", vibe: "Turns a one-line idea into a spec a team can build.",
+        milestones: () => ({
+          mid: "Product goals and user stories drafted; ranking the requirement pool P0-P2 now.",
+          done: "PRD delivered — 3 goals, user stories, top-5 requirements (P0-P2). ANYTHING_UNCLEAR items routed to the CEO.",
+        }),
+      },
+      {
+        role: "architect",
+        titleFor: (c) => `Design: system architecture for ${c.niche}`,
+        objectiveFor: () => `Turn the PRD into a system design: implementation approach, file list, data structures & interfaces, and program call flow. Mark interfaces clearly — downstream implements exactly this, no improvising. End with ANYTHING_UNCLEAR.`,
+        tools: [], credentials: [], policyTemplate: "worker-minimal.yaml",
+        estimateSec: 26, dependsOn: [0], reasoning: "high",
+        handoff: "system design", vibe: "Draws the boundaries everyone else builds inside.",
+        milestones: () => ({
+          mid: "Implementation approach picked; locking the interface and call-flow contracts.",
+          done: "System design handed off — file list, interfaces and call flow locked for the builder.",
+        }),
+      },
+      {
+        role: "builder",
+        titleFor: (c) => `Build: working prototype for ${c.niche}`,
+        objectiveFor: (c) => `Implement the design for "${c.goalText}": follow the design document exactly (never alter interfaces), core user flow first, pre-built components where possible, no TODO placeholders.`,
+        tools: [], credentials: [], policyTemplate: "worker-minimal.yaml",
+        estimateSec: 40, dependsOn: [1], reasoning: "medium",
+        handoff: "working build", vibe: "Turns an idea into a working prototype before the meeting's over.",
+        milestones: () => ({
+          mid: "Core flow implemented against the locked interfaces; wiring secondary states.",
+          done: "Build complete — core flow working, implemented to the design document, no TODO placeholders.",
+        }),
+      },
+      {
+        role: "qa-reviewer",
+        titleFor: () => "Review: bounded QA passes against the PRD",
+        objectiveFor: () => `Review the build in at most 3 passes: each pass, report the ONE highest-priority issue and hand it back for a fix — or conclude Finished. Verify the PRD's P0 requirements are met.`,
+        tools: [], credentials: [], policyTemplate: "worker-minimal.yaml",
+        estimateSec: 20, dependsOn: [2], reasoning: "medium",
+        handoff: "review verdict", vibe: "Finds the one bug that matters before anyone else does.",
+        milestones: () => ({
+          mid: "Pass 1: highest-priority issue reported and handed back for a fix.",
+          done: "Review concluded Finished — P0 requirements verified within bounded passes.",
+        }),
+      },
+    ],
+  },
+  {
     id: "market-research",
     match: /.*/, // fallback playbook
     description: "General research: gather → synthesize",
@@ -127,4 +319,14 @@ export function matchPlaybook(goalText: string): Playbook {
 
 export function roleNames(): string[] {
   return [...new Set(PLAYBOOKS.flatMap((p) => p.roles.map((r) => r.role)))];
+}
+
+// Sim-mode milestone copy for roles the orchestrator has no bespoke case for.
+// First template that declares milestones for the role wins.
+export function milestoneFor(role: string, niche: string): { mid: string; done: string } | undefined {
+  for (const p of PLAYBOOKS) {
+    const r = p.roles.find((t) => t.role === role && t.milestones);
+    if (r?.milestones) return r.milestones({ niche });
+  }
+  return undefined;
 }

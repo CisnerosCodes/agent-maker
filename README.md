@@ -117,9 +117,11 @@ it directly. `reset demo` clears everything.
   reuses its findings (0 re-scrapes, 0 research API calls), and the dashboard's
   Run Memory strip shows the run-over-run delta. The company gets faster at work
   it has done before.
-- **Role library — REAL.** The CEO hires from `src/roles/library.ts` (store-launch,
-  marketing-agency, market-research playbooks). Adding a role is a library entry,
-  not new orchestrator code.
+- **Role library — REAL.** The CEO hires from `src/roles/library.ts` — seven
+  playbooks: store-launch, marketing-agency, software-shipping (MetaGPT-style
+  PRD → design → build → QA), seo-optimization, customer-support, fact-check,
+  and the market-research fallback. Adding a role is a library entry, not new
+  orchestrator code. Ported patterns are credited in `docs/BORROWED_PATTERNS.md`.
 - **SecurityGate + escalations — REAL.** Every bus message and worker I/O is
   scanned (heuristic floor always on; HiddenLayer merges in with a key). Click
   **"inject poisoned doc"**: the gate flags prompt-injection + data-exfiltration,

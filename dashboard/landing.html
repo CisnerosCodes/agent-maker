@@ -88,13 +88,6 @@
 
     /* hero dashboard window */
     .window-wrap { position: relative; max-width: 1000px; margin: 0 auto; }
-    .bee-nest {
-      position: absolute; right: -56px; top: -118px; width: 200px; height: 200px; z-index: 3;
-      border-radius: 50%; border: 1px solid rgba(139,92,246,0.35);
-      box-shadow: 0 20px 60px rgba(109,40,217,0.45);
-      pointer-events: none;
-    }
-    @media (max-width: 1120px) { .bee-nest { right: 0; width: 150px; height: 150px; top: -85px; } }
     .window {
       background: var(--bg1); border: 1px solid rgba(139,92,246,0.25);
       border-radius: 16px 16px 0 0; overflow: hidden;
@@ -465,14 +458,15 @@
     }
     .cta-final .foot a:hover { color: var(--text); }
 
-    /* ---------- scroll bee (alpha-keyed video, scrubbed BY scroll — it only
-       moves and only advances a frame while the page is actually scrolling) */
-    #bee {
-      position: fixed; left: 0; top: 0; z-index: 40; width: 300px; height: 169px;
-      pointer-events: none; will-change: transform, opacity; opacity: 0;
+    /* ---------- bee interlude: full-bleed footage scrubbed BY scroll — the
+       frame only advances while the page is actually scrolling */
+    .beeband { position: relative; height: 72vh; min-height: 380px; background: #fff; overflow: hidden; }
+    .beeband video { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .beeband .cap {
+      position: absolute; left: 0; right: 0; bottom: 18px; text-align: center;
+      font-family: var(--font-mono); font-size: 0.66rem; letter-spacing: 0.18em;
+      text-transform: uppercase; color: rgba(34,28,23,0.35);
     }
-    #bee video { width: 100%; height: 100%; object-fit: contain; }
-    @media (max-width: 760px), (prefers-reduced-motion: reduce) { #bee { display: none; } }
 
     /* scroll reveals */
     .reveal { opacity: 0; transform: translateY(14px); transition: opacity .55s ease, transform .55s ease; }
@@ -509,7 +503,6 @@
     </div>
 
     <div class="window-wrap">
-      <div class="bee-nest" id="beeNest"></div>
       <div class="window">
         <div class="chrome"><i></i><i></i><i></i><span class="url" id="mdUrl">clawcolony.ai/app — Mission Control</span></div>
         <div class="stage" id="mdStage">
@@ -727,6 +720,13 @@
     </div>
   </section>
 
+  <!-- the colony's bee: footage scrubbed by your scroll — still page, still bee -->
+  <div class="beeband" id="beeBand" aria-hidden="true">
+    <video id="beeVid" muted playsinline preload="auto" src="/media/bee-flight.mp4"
+           onerror="document.getElementById('beeBand').remove()"></video>
+    <div class="cap">The worker — flies as you scroll</div>
+  </div>
+
   <section class="sec" id="security">
     <div class="sec-demo">
       <div>
@@ -899,13 +899,6 @@
     </div>
   </div>
 
-  <!-- the colony's bee: scrubbed by scroll — parked while the page is still -->
-  <div id="bee" aria-hidden="true">
-    <video id="beeVid" muted playsinline preload="auto"
-           onerror="document.getElementById('bee').remove()">
-      <source src="/media/bee-alpha.webm" type='video/webm; codecs="vp9"' />
-    </video>
-  </div>
 
   <script>
     const $ = (id) => document.getElementById(id);
@@ -1185,58 +1178,12 @@
       demoLoop();
     }
 
-    // ---------- the bee: scrubbed by scroll ----------
-    // Position AND video frame are pure functions of scroll progress. No idle
-    // loop: when the page is still, the bee is a statue. Opacity dips to 0
-    // over the light bands. The video is alpha-keyed (VP9), no blend tricks.
-    const bee = $("bee"), beeVid = $("beeVid");
-    const BEE_W = 300, BEE_H = 169;
-    let waypoints = [];
-    function buildPath() {
-      const doc = document.documentElement.scrollHeight - innerHeight;
-      if (doc <= 0) return;
-      const yOf = (el, frac = 0.5) => {
-        const r = el.getBoundingClientRect();
-        return Math.min(1, Math.max(0, (scrollY + r.top + r.height * frac - innerHeight / 2) / doc));
-      };
-      const nest = $("beeNest").getBoundingClientRect();
-      waypoints = [
-        // at rest on its ring beside the hero window
-        { t: 0, x: nest.left + nest.width / 2, y: nest.top + scrollY + nest.height / 2, s: 1, o: 1, fixedX: true },
-        { t: 0.06, xf: 0.78, yv: 0.34, s: 1, o: 1 },
-        { t: yOf(document.querySelector(".partners")), xf: 0.2, yv: 0.4, s: 0.8, o: 0.9 },
-        { t: yOf($("how"), 0.15), xf: 0.1, yv: 0.3, s: 0.7, o: 0 },      // light band — vanish
-        { t: yOf($("security"), 0.1), xf: 0.12, yv: 0.25, s: 0.8, o: 0 },
-        { t: yOf($("security"), 0.4), xf: 0.5, yv: 0.2, s: 0.95, o: 1 }, // dark again — swoop in
-        { t: yOf($("security"), 0.9), xf: 0.85, yv: 0.6, s: 0.85, o: 1 },
-        { t: yOf($("stories"), 0.35), xf: 0.14, yv: 0.42, s: 0.95, o: 1 }, // sweep the stories
-        { t: yOf($("pricing"), 0.1), xf: 0.9, yv: 0.3, s: 0.7, o: 0 },   // light band — vanish
-        { t: yOf($("faq"), 0.5), xf: 0.85, yv: 0.4, s: 0.7, o: 0 },
-        { t: yOf(document.querySelector(".cta-final"), 0.12), xf: 0.5, yv: 0.16, s: 0.9, o: 0 },
-        { t: yOf(document.querySelector(".cta-final"), 0.3), xf: 0.62, yv: 0.2, s: 1, o: 1 },  // hover over the hive
-        { t: 1, xf: 0.38, yv: 0.3, s: 1, o: 1 },
-      ].sort((a, b) => a.t - b.t);
-    }
-    function pathAt(t) {
-      let a = waypoints[0], b = waypoints[waypoints.length - 1];
-      for (let i = 0; i < waypoints.length - 1; i++) {
-        if (t >= waypoints[i].t && t <= waypoints[i + 1].t) { a = waypoints[i]; b = waypoints[i + 1]; break; }
-      }
-      const span = Math.max(b.t - a.t, 1e-6);
-      let u = (t - a.t) / span;
-      u = u * u * (3 - 2 * u); // smoothstep
-      const X = (w) => w.fixedX ? w.x : w.xf * innerWidth;
-      const Y = (w) => w.fixedX ? w.y - scrollY : w.yv * innerHeight;
-      return {
-        x: X(a) + (X(b) - X(a)) * u,
-        y: Y(a) + (Y(b) - Y(a)) * u,
-        s: a.s + (b.s - a.s) * u,
-        o: a.o + (b.o - a.o) * u,
-      };
-    }
-    if (!reduced) {
-      let pathKey = "", lastX = null, pending = false, vidDur = 8;
-      beeVid.addEventListener("loadedmetadata", () => { vidDur = beeVid.duration || 8; beeUpdate(); });
+    // ---------- bee interlude: footage scrubbed by scroll ----------
+    // The video frame is a pure function of how far the band has travelled
+    // through the viewport. No idle playback: still page -> still bee.
+    const beeVid = $("beeVid"), beeBand = $("beeBand");
+    if (beeVid && beeBand) {
+      let vidDur = 8, pending = false;
       // Chrome quirks: a never-played video may not present seeked frames, and
       // rapid currentTime writes cancel in-flight seeks. Prime with a muted
       // play/pause once decodable, and serialize seeks via the seeked event.
@@ -1252,38 +1199,31 @@
         seekBusy = false;
         if (seekTarget != null && Math.abs(beeVid.currentTime - seekTarget) > 0.03) requestSeek(seekTarget);
       });
+      beeVid.addEventListener("loadedmetadata", () => { vidDur = beeVid.duration || 8; bandUpdate(); });
       beeVid.addEventListener("canplay", () => {
         const p = beeVid.play();
-        if (p && p.then) p.then(() => { beeVid.pause(); beeUpdate(); }).catch(() => {});
+        if (p && p.then) p.then(() => { beeVid.pause(); bandUpdate(); }).catch(() => {});
       }, { once: true });
-      function beeUpdate() {
+      function bandUpdate() {
         pending = false;
-        if (innerWidth <= 760 || !innerHeight) return; // bee hidden on small screens
-        // (re)build the flight path whenever page geometry changes — the pane
-        // can load this page before it has any size at all
-        const key = innerWidth + "x" + document.documentElement.scrollHeight;
-        if (key !== pathKey) { pathKey = key; buildPath(); lastX = null; }
-        if (!waypoints.length) return;
-        const doc = document.documentElement.scrollHeight - innerHeight;
-        const p = doc > 0 ? Math.min(1, Math.max(0, scrollY / doc)) : 0;
-        const t = pathAt(p);
-        const tilt = lastX == null ? 0 : Math.max(-12, Math.min(12, (t.x - lastX) * 0.25));
-        lastX = t.x;
-        bee.style.opacity = t.o.toFixed(3);
-        bee.style.transform =
-          `translate(${t.x - BEE_W / 2}px, ${t.y - BEE_H / 2}px) scale(${t.s.toFixed(3)}) rotate(${tilt.toFixed(1)}deg)`;
-        // Scrub the flight footage: scroll progress IS the playhead. Idle
-        // page -> frozen frame. The first ~2s of footage is the bee flying
-        // into frame (mostly a leg) — skip it and scrub the fully-visible
-        // hover segment only.
-        requestSeek(Math.min(vidDur - 0.05, 2.0 + p * (vidDur - 2.4)));
+        if (!innerHeight) return;
+        const r = beeBand.getBoundingClientRect();
+        const total = r.height + innerHeight;                       // enter-to-exit distance
+        const passed = Math.min(total, Math.max(0, innerHeight - r.top));
+        const p = passed / total;
+        requestSeek(Math.min(vidDur - 0.05, 0.05 + p * (vidDur - 0.1)));
       }
-      const queueBee = () => { if (!pending) { pending = true; requestAnimationFrame(beeUpdate); } };
-      addEventListener("scroll", queueBee, { passive: true });
-      addEventListener("resize", queueBee, { passive: true });
-      addEventListener("load", queueBee);
-      queueBee();
-      // headless-verification hook: /#y=2600 jumps the page (and the bee) there
+      if (reduced) {
+        // no scrubbing: park on a fully-visible frame
+        beeVid.addEventListener("loadedmetadata", () => { try { beeVid.currentTime = 4; } catch {} });
+      } else {
+        const queueBand = () => { if (!pending) { pending = true; requestAnimationFrame(bandUpdate); } };
+        addEventListener("scroll", queueBand, { passive: true });
+        addEventListener("resize", queueBand, { passive: true });
+        addEventListener("load", queueBand);
+        queueBand();
+      }
+      // headless-verification hook: /#y=2600 jumps the page there
       const dbgY = /^#y=(\d+)$/.exec(location.hash);
       if (dbgY) addEventListener("load", () => scrollTo({ top: +dbgY[1], behavior: "instant" }));
     }

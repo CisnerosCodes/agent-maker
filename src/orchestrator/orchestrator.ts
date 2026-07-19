@@ -17,7 +17,7 @@ import { runMemory, type RunRecord } from "../memory/runs.js";
 import { missingFor } from "../config/env.js";
 import { companyProfile, clearCompanyProfile } from "../config/company.js";
 import { friendlyError } from "../config/errors.js";
-import { matchPlaybook } from "../roles/library.js";
+import { matchPlaybook, milestoneFor } from "../roles/library.js";
 
 const CEO_ID = "ceo-01";
 const TICK_MS = 1200;
@@ -460,8 +460,13 @@ class Orchestrator extends EventEmitter {
         return phase === "mid"
           ? `Brand voice locked; descriptions in progress for ${found || built} products.`
           : `Copy delivered for ${found || built} products plus homepage hero.`;
-      default:
+      default: {
+        // Library roles (software-shipping, seo, support, fact-check…) declare
+        // their own sim-mode milestone copy; generic line only if none exists.
+        const m = milestoneFor(agent.spec.role, this.niche.get(task.goalId) ?? "the target market");
+        if (m) return phase === "mid" ? m.mid : m.done;
         return phase === "mid" ? "Halfway — interim notes posted." : `Done: ${task.title}`;
+      }
     }
   }
 
