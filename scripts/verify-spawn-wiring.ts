@@ -89,7 +89,8 @@ async function main(): Promise<void> {
   resetRejectedCount();
   const legitRoles: PlannedRole[] = [
     // exactly what src/roles/library.ts emits for the store-launch playbook
-    role({ role: "research", name: "research-ok", objective: "find products", tools: ["apify", "web-fetch"], credentials: ["APIFY_TOKEN"], policyTemplate: "worker-research.yaml" }),
+    // (C15: research is broker-ingest — no issued credential; apify is env-resolved)
+    role({ role: "research", name: "research-ok", objective: "find products", tools: ["apify", "web-fetch"], credentials: [], policyTemplate: "worker-research.yaml" }),
     role({ role: "store-builder", name: "store-ok", objective: "build store", tools: ["shopify-admin"], credentials: ["SHOPIFY_ADMIN_TOKEN"], policyTemplate: "worker-storebuilder.yaml" }),
     role({ role: "copywriter", name: "copy-ok", objective: "write copy", tools: [], credentials: [], policyTemplate: "worker-minimal.yaml" }),
   ];
