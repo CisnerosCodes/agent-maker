@@ -7,6 +7,7 @@ import type { AgentRecord } from "../types.js";
 
 const DATA_DIR = process.env.REGISTRY_DIR ?? "./data";
 const FILE = `${DATA_DIR}/registry.json`;
+const LOG_CAP = 200;
 
 class Registry extends EventEmitter {
   private agents = new Map<string, AgentRecord>();
@@ -25,9 +26,12 @@ class Registry extends EventEmitter {
 
   upsert(record: AgentRecord, message?: string) {
     record.updatedAt = new Date().toISOString();
-    if (message) record.log.push({ ts: record.updatedAt, kind: "status", message });
+    if (message) {
+      record.log.push({ ts: record.updatedAt, kind: "status", message });
+      if (record.log.length > LOG_CAP) record.log.shift();
+    }
     this.agents.set(record.id, record);
-    this.persist();
+    this.persistAsync();
     this.emit("update", record); // dashboard SSE hooks this
   }
 
@@ -36,12 +40,13 @@ class Registry extends EventEmitter {
 
   clear() {
     this.agents.clear();
-    this.persist();
+    this.persistAsync();
   }
 
-  private persist() {
+  private persistAsync() {
     mkdirSync(DATA_DIR, { recursive: true });
-    writeFileSync(FILE, JSON.stringify(this.all(), null, 2));
+    const data = JSON.stringify(this.all(), null, 2);
+    writeFileSync(FILE, data);
   }
 }
 

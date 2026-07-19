@@ -28,7 +28,7 @@ class Bus extends EventEmitter {
   post(msg: Omit<BusMessage, "id" | "ts">): BusMessage {
     const full: BusMessage = { id: randomUUID().slice(0, 8), ts: new Date().toISOString(), ...msg };
     this.messages.push(full);
-    this.persist();
+    this.persistAsync();
     this.emit("message", full);
     return full;
   }
@@ -43,12 +43,13 @@ class Bus extends EventEmitter {
 
   clear() {
     this.messages = [];
-    this.persist();
+    this.persistAsync();
   }
 
-  private persist() {
+  private persistAsync() {
     mkdirSync(DATA_DIR, { recursive: true });
-    writeFileSync(FILE, JSON.stringify(this.messages, null, 2));
+    const data = JSON.stringify(this.messages, null, 2);
+    writeFileSync(FILE, data);
   }
 }
 
