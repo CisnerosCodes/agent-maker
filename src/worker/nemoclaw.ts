@@ -162,6 +162,16 @@ export function __resetCli(): void {
   cli = runCli;
 }
 
+/**
+ * Shell out to OpenShell through the SAME injectable `cli` seam dispatch uses
+ * (policy-tightening-loop.spec.md §11). The tightening loop reuses this so it
+ * shells out through the one hardened spawn site — no second subprocess runner,
+ * and the adversarial harness's fake `cli` drives it with no live gateway.
+ */
+export function runOpenshell(args: string[], timeoutMs: number = STATUS_TIMEOUT_MS): Promise<CliResult> {
+  return cli("openshell", args, timeoutMs);
+}
+
 // --- toolchain probe (auto-containment default) ---------------------------
 //
 // The Factory defaults WORKER_MODE to AUTO: contain via OpenShell when the

@@ -11,6 +11,7 @@
     "eval": "tsx src/evals/run.ts",
     "eval:prompts": "tsx src/evals/prompts.ts",
     "adversarial": "tsx test/adversarial/run.ts",
+    "tighten": "tsx scripts/policy-tighten.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit"
   },

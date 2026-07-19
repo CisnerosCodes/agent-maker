@@ -528,6 +528,132 @@ async function suiteCredHygiene(): Promise<SuiteResult> {
   return tally("cred-hygiene", cases);
 }
 
+// ---- policy-tightening loop -------------------------------------------------
+// The §3.1 stretch: a flag in run N produces a `deny` fragment enforced in run
+// N+1. Runs entirely through the F3 sim seam (no live gateway, §8). Writes its
+// audit trail to a SCRATCH log dir so the git-tracked policies/generated/
+// tightening-log.jsonl stays clean. Cases mirror spec §16.
+async function suitePolicyTightening(): Promise<SuiteResult> {
+  // Redirect the sidecar to a scratch dir BEFORE first import of the tightening
+  // modules (they read TIGHTENING_LOG_DIR at module-eval time). Fresh slate so the
+  // dedupe/apply cases are deterministic.
+  const tmpDir = join(REPORT, "tightening-tmp");
+  process.env.TIGHTENING_LOG_DIR = tmpDir;
+  mkdirSync(tmpDir, { recursive: true });
+  writeFileSync(join(tmpDir, "tightening-log.jsonl"), "");
+
+  const t = await import("../../src/security/tightening.js");
+  const { readLog } = await import("../../src/security/tightening-log.js");
+  const cases: CaseResult[] = [];
+  const hasApplied = (role: string, target: string) =>
+    readLog(role).some((r) => r.target === target && r.applied === true);
+
+  // (1) capture-from-egress — a denied host yields one deny_host signal.
+  const sig = t.capture({ role: "research", deniedEgress: ["evil.example"] });
+  cases.push(
+    mkCase(
+      "tightening:capture-from-egress",
+      sig.length === 1 && sig[0].kind === "deny_host" && sig[0].target === "evil.example",
+      sig.length === 1 ? "1 deny_host signal for evil.example ✓" : `unexpected signals: ${JSON.stringify(sig)}`,
+    ),
+  );
+
+  // (2) direction-invariant — every compiled rule is a "deny"; no widen path.
+  const compiled = t.compile(sig, "research");
+  cases.push(
+    mkCase(
+      "tightening:direction-invariant",
+      compiled.length > 0 && compiled.every((r) => r.direction === "deny"),
+      compiled.length > 0 && compiled.every((r) => r.direction === "deny")
+        ? "all rules direction=deny ✓"
+        : `non-deny rule produced: ${JSON.stringify(compiled)}`,
+    ),
+  );
+
+  // (3) apply-success — exit 0 loads, revision read, applied:true row appended.
+  nemo.__setCli(makeSimCli({ policyUpdateExit: 0, policyRevision: 7 }));
+  const okRule = { role: "research", detector: "openshell:egress_denied", target: "evil.example", kind: "deny_host" as const, direction: "deny" as const };
+  const applyRes = await t.applyRule(okRule);
+  await t.policyTightener.run({ role: "research", deniedEgress: ["evil.example"] });
+  cases.push(
+    mkCase(
+      "tightening:apply-success",
+      applyRes.ok && applyRes.revision === 7 && hasApplied("research", "evil.example"),
+      applyRes.ok && applyRes.revision === 7
+        ? `applied → revision 7, row logged ✓`
+        : `apply failed: ${JSON.stringify(applyRes)}`,
+    ),
+  );
+
+  // (4) apply-fail-closed — exit 1 (validation failed): ok:false, no applied row.
+  nemo.__setCli(makeSimCli({ policyUpdateExit: 1 }));
+  const failRule = { ...okRule, target: "bad1.example" };
+  const failRes = await t.applyRule(failRule);
+  await t.policyTightener.run({ role: "research", deniedEgress: ["bad1.example"] });
+  cases.push(
+    mkCase(
+      "tightening:apply-fail-closed",
+      !failRes.ok && !hasApplied("research", "bad1.example"),
+      !failRes.ok ? "exit 1 → ok:false, no applied row (fail-closed ✓)" : `LEAK: applied on validation failure ${JSON.stringify(failRes)}`,
+    ),
+  );
+
+  // (5) timeout-fail-closed — exit 124: same fail-closed posture.
+  nemo.__setCli(makeSimCli({ policyUpdateExit: 124 }));
+  const toRule = { ...okRule, target: "bad2.example" };
+  const toRes = await t.applyRule(toRule);
+  await t.policyTightener.run({ role: "research", deniedEgress: ["bad2.example"] });
+  cases.push(
+    mkCase(
+      "tightening:timeout-fail-closed",
+      !toRes.ok && toRes.exitCode === 124 && !hasApplied("research", "bad2.example"),
+      !toRes.ok ? "timeout → ok:false, no applied row (fail-closed ✓)" : `LEAK: applied on timeout ${JSON.stringify(toRes)}`,
+    ),
+  );
+
+  // (6) conflict-escalates — a host in worker-research.yaml's allowlist must NOT
+  //     be auto-applied (would strangle the worker's own inference egress).
+  nemo.__setCli(makeSimCli({ policyUpdateExit: 0, policyRevision: 9 }));
+  const collide = { ...okRule, target: "integrate.api.nvidia.com" };
+  const verdict = t.conflictCheck(collide);
+  const escOut = await t.policyTightener.run({ role: "research", deniedEgress: ["integrate.api.nvidia.com"] });
+  cases.push(
+    mkCase(
+      "tightening:conflict-escalates",
+      verdict === "escalate" && escOut.escalated.length === 1 && !hasApplied("research", "integrate.api.nvidia.com"),
+      verdict === "escalate" ? "allowlist collision → escalate, not applied ✓" : `expected escalate, got ${verdict}`,
+    ),
+  );
+
+  // (7) idempotent — re-running the loop on the same signal applies nothing.
+  nemo.__setCli(makeSimCli({ policyUpdateExit: 0, policyRevision: 11 }));
+  const first = await t.policyTightener.run({ role: "research", deniedEgress: ["evil7.example"] });
+  const second = await t.policyTightener.run({ role: "research", deniedEgress: ["evil7.example"] });
+  cases.push(
+    mkCase(
+      "tightening:idempotent",
+      first.applied.length === 1 && second.applied.length === 0,
+      first.applied.length === 1 && second.applied.length === 0
+        ? "second run applied nothing (dedupe ✓)"
+        : `first=${first.applied.length} second=${second.applied.length} (expected 1 then 0)`,
+    ),
+  );
+
+  // (8) diff-renders — renderDiff returns non-empty before/after text.
+  nemo.__setCli(makeSimCli({ dryRunText: "network_policies:\n  denied:\n    - host: evil8.example" }));
+  const diff = await t.renderDiff({ ...okRule, target: "evil8.example" });
+  cases.push(
+    mkCase(
+      "tightening:diff-renders",
+      diff.trim().length > 0 && diff.includes("evil8.example"),
+      diff.trim().length > 0 ? "renderDiff → non-empty before/after ✓" : "renderDiff returned empty",
+    ),
+  );
+
+  nemo.__resetCli();
+  return tally("policy-tightening", cases);
+}
+
 // ---- pending suites (spec §3 rows not yet wired; see spec §8 open items) ---
 
 // egress / cred-hygiene / dispatch-seam went LIVE via the F3 sim seam (see the
@@ -559,6 +685,7 @@ async function main() {
   all.push(await suiteDispatchSeam());
   all.push(await suiteEgress());
   all.push(await suiteCredHygiene());
+  all.push(await suitePolicyTightening());
   // Live-only suites — attempted in `full`, forced pending in `scan` so the floor
   // check never needs a live sandbox/brain and always terminates fast.
   if (MODE === "full") {
