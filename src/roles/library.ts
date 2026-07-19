@@ -43,7 +43,7 @@ const research: RoleTemplate = {
   titleFor: (c) => `Research: best-selling ${c.niche} products & competitors`,
   objectiveFor: (c) => `Find 10 trending ${c.niche} products with prices, images and competitor positioning`,
   tools: ["apify", "web-fetch"],
-  credentials: ["APIFY_TOKEN"],
+  credentials: [],
   policyTemplate: "worker-research.yaml",
   estimateSec: 28,
   dependsOn: [],
