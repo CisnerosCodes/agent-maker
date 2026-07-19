@@ -37,6 +37,12 @@ export interface SimScenario {
   completionShape?: "completion" | "message.content";
   /** hosts the in-sandbox tool step attempted and the fail_closed policy denied (F4). */
   deniedEgress?: string[];
+  /** what `openshell policy update <role> --add-deny … --wait` returns (§15). Default 0. */
+  policyUpdateExit?: 0 | 1 | 124;
+  /** what `openshell policy list <role> --json` reports as the revision (§15). Default 1. */
+  policyRevision?: number;
+  /** canned `openshell policy update … --dry-run` stdout for renderDiff (§15). */
+  dryRunText?: string;
 }
 
 function ok(stdout: string): CliResult {
@@ -113,6 +119,23 @@ export function makeSimCli(scenario: SimScenario = {}) {
         return ok(
           JSON.stringify({ network: { fail_closed: s.policyFailClosed, allowlist: [] } }),
         );
+      }
+      // Policy-tightening loop (§15). `policy update … --dry-run` never calls the
+      // gateway → canned merged-policy text. `policy update … --wait` returns the
+      // scenario exit (0 loaded / 1 validation-failed / 124 timeout). `policy list`
+      // reports the revision the merge produced.
+      if (sub === "policy" && args[1] === "update") {
+        if (args.includes("--dry-run")) {
+          const target = argValue(args, "--add-deny") ?? "";
+          return ok(s.dryRunText ?? `network_policies:\n  denied:\n    - host: ${target}  # +learned deny`);
+        }
+        const exit = s.policyUpdateExit ?? 0;
+        if (exit === 124) return { code: null, stdout: "", stderr: "policy update timed out", timedOut: true };
+        if (exit === 0) return ok("{}");
+        return { code: exit, stdout: "", stderr: "validation failed", timedOut: false };
+      }
+      if (sub === "policy" && args[1] === "list") {
+        return ok(JSON.stringify({ revision: s.policyRevision ?? 1 }));
       }
       if (sub === "inference") return ok("{}");
     }
