@@ -4,7 +4,7 @@
 
 import "../src/config/load-env.js"; // MUST stay first: loads .env before modules read env
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, statSync, createReadStream } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { registry } from "../src/registry/registry.js";
@@ -101,14 +101,33 @@ const STATIC_TYPES: Record<string, string> = {
   ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
   ".mp4": "video/mp4", ".webm": "video/webm", ".ico": "image/x-icon",
 };
-function serveStatic(res: ServerResponse, urlPath: string): boolean {
+function serveStatic(req: IncomingMessage, res: ServerResponse, urlPath: string): boolean {
   const rel = urlPath.replace(/^\//, "").split("?")[0];
   if (!/^(theme\.css|logo\.svg|(vendor|media)\/[\w][\w.\/-]*)$/.test(rel) || rel.includes("..")) return false;
   const file = fileURLToPath(new URL(`./${rel}`, import.meta.url));
   if (!existsSync(file)) return false;
   const ext = rel.slice(rel.lastIndexOf("."));
-  res.writeHead(200, { "Content-Type": STATIC_TYPES[ext] ?? "application/octet-stream", "Cache-Control": "no-cache" });
-  res.end(readFileSync(file));
+  const type = STATIC_TYPES[ext] ?? "application/octet-stream";
+  const size = statSync(file).size;
+  // Range support matters: browsers seek <video> via byte-range requests, and
+  // the landing page scrubs the bee footage by scroll position.
+  const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? "");
+  if (range && (range[1] || range[2])) {
+    const start = range[1] ? parseInt(range[1], 10) : Math.max(0, size - parseInt(range[2], 10));
+    const end = range[1] && range[2] ? Math.min(parseInt(range[2], 10), size - 1) : size - 1;
+    if (start >= size || start > end) {
+      res.writeHead(416, { "Content-Range": `bytes */${size}` }).end();
+      return true;
+    }
+    res.writeHead(206, {
+      "Content-Type": type, "Cache-Control": "no-cache", "Accept-Ranges": "bytes",
+      "Content-Range": `bytes ${start}-${end}/${size}`, "Content-Length": end - start + 1,
+    });
+    createReadStream(file, { start, end }).pipe(res);
+    return true;
+  }
+  res.writeHead(200, { "Content-Type": type, "Cache-Control": "no-cache", "Accept-Ranges": "bytes", "Content-Length": size });
+  createReadStream(file).pipe(res);
   return true;
 }
 
@@ -120,7 +139,7 @@ createServer(async (req, res) => {
     } else if (req.url === "/app" || req.url === "/app/") {
       res.writeHead(200, { "Content-Type": "text/html" });
       res.end(readFileSync(new URL("./index.html", import.meta.url)));
-    } else if (req.method === "GET" && serveStatic(res, req.url ?? "")) {
+    } else if (req.method === "GET" && serveStatic(req, res, req.url ?? "")) {
       // handled by static whitelist above
     } else if (req.url === "/setup") {
       res.writeHead(200, { "Content-Type": "text/html" });

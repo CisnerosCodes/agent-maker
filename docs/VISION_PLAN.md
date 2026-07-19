@@ -136,6 +136,27 @@ interface CapabilityManifest {
 
 ---
 
+## 2.5 · Demo parity contract — the landing demo is a promise, not an illustration
+
+The hero demo on `/` plays a scripted journey. **Every beat in it must be reachable in the
+real app**; anything we can't make real gets cut from the demo, not hand-waved. Beat-by-beat:
+
+| Demo beat | Real today? | Owed by |
+|---|---|---|
+| Intake wizard shapes the org | **Yes** — company profile feeds planning | — |
+| Goal → CEO drafts a 4-role org for an off-script goal ("put my sneakers online") | **No** — keyword playbooks would fall back to market-research | W2 (P1.5) |
+| "Org plan awaiting approval" in supervised mode | **Partial** — plan gate only fires in *assisted* mode today; demo shows it in supervised. Either flip the default (plan approval always gated) or match the demo to governance | P0 decision |
+| Roles `webmaster-1`, `connector-1`, `listing-1` | **No** — library has research/store-builder/copywriter/strategist/analyst. Add these as `RoleTemplate` entries (webmaster ≈ store-builder split; connector = key-wiring + test order; listing = photo→listing) | W6 (P1) |
+| Workers provision → work, REAL/SIM tags, listing waits on research | **Yes** — factory states, `dependsOn`, mode tags all real |  — |
+| Poisoned doc → escalation → deny → quarantine → colony resumes | **Yes** — the money demo, end-to-end real | — |
+| 100% → "Deliverable ready" card with store link | **Partial** — `goal.deliverable` is a bare URL string; the card/object shape is W6 | W6 (P1.7) |
+| Clicking the deliverable opens a live store with 12 photographed, priced products | **Partial** — Shopify product-create is real when a store is connected; photo→listing pipeline is W6 (P1.6); product *photos* come from Maya, not generation | W6 (P1.6) |
+| Run memory strip ("run 2 reuses all of it") | **Yes** — exact-niche recall works | — |
+
+Rule going forward: a new demo beat lands **only** with a linked plan item that makes it real.
+
+---
+
 ## 3 · Phasing
 
 **P0 — hackathon-now (each ≤ ~half day, independently demoable)**

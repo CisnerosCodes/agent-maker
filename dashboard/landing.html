@@ -307,7 +307,7 @@
     .md .sf-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; padding: 26px 48px; }
     .md .sf-card { background: #fff; border: 1px solid rgba(34,28,23,0.08); border-radius: 14px; overflow: hidden; }
     .md .sf-swatch { height: 150px; display: flex; align-items: center; justify-content: center; }
-    .md .sf-swatch svg { width: 96px; opacity: 0.85; }
+    .md .sf-swatch svg { width: 160px; }
     .md .sf-card .info { padding: 13px 16px 15px; }
     .md .sf-card .n { font-size: 13.5px; font-weight: 700; }
     .md .sf-card .p { font-size: 12.5px; color: #6d6258; margin-top: 2px; }
@@ -665,27 +665,19 @@
               </div>
               <div class="sf-grid">
                 <div class="sf-card">
-                  <div class="sf-swatch" style="background:#efe3d3;color:#8a5a3b">
-                    <svg viewBox="0 0 48 28" fill="currentColor"><path d="M3 21 C3 17.5 6 16.6 10 15.8 L16 14 C19 13 21 11 22 8 C22.5 6.4 24.2 6 25.2 7.2 C27 10 30.5 12 35 13 L41 14.2 C44 14.8 45 16.2 45 18 L45 19.8 L3 21 Z"/><path d="M2.5 24.5 L45.5 24.5 C46.3 23 45.7 21 43.5 21 L4.5 21 C2.6 21 1.8 23 2.5 24.5 Z"/></svg>
-                  </div>
+                  <div class="sf-swatch" data-way="tan"></div>
                   <div class="info"><div class="n">Marfa Trail Low</div><div class="p">Tan leather · $148</div><div class="add">Add to cart</div></div>
                 </div>
                 <div class="sf-card">
-                  <div class="sf-swatch" style="background:#e7d7c3;color:#5a3a24">
-                    <svg viewBox="0 0 48 28" fill="currentColor"><path d="M3 21 C3 17.5 6 16.6 10 15.8 L16 14 C19 13 21 11 22 8 C22.5 6.4 24.2 6 25.2 7.2 C27 10 30.5 12 35 13 L41 14.2 C44 14.8 45 16.2 45 18 L45 19.8 L3 21 Z"/><path d="M2.5 24.5 L45.5 24.5 C46.3 23 45.7 21 43.5 21 L4.5 21 C2.6 21 1.8 23 2.5 24.5 Z"/></svg>
-                  </div>
+                  <div class="sf-swatch" data-way="saddle"></div>
                   <div class="info"><div class="n">Presidio High</div><div class="p">Saddle brown · $164</div><div class="add" id="mdAdd2">Add to cart</div></div>
                 </div>
                 <div class="sf-card">
-                  <div class="sf-swatch" style="background:#ded9d2;color:#2b2724">
-                    <svg viewBox="0 0 48 28" fill="currentColor"><path d="M3 21 C3 17.5 6 16.6 10 15.8 L16 14 C19 13 21 11 22 8 C22.5 6.4 24.2 6 25.2 7.2 C27 10 30.5 12 35 13 L41 14.2 C44 14.8 45 16.2 45 18 L45 19.8 L3 21 Z"/><path d="M2.5 24.5 L45.5 24.5 C46.3 23 45.7 21 43.5 21 L4.5 21 C2.6 21 1.8 23 2.5 24.5 Z"/></svg>
-                  </div>
+                  <div class="sf-swatch" data-way="black"></div>
                   <div class="info"><div class="n">Vespera Court</div><div class="p">Black nubuck · $172</div><div class="add">Add to cart</div></div>
                 </div>
                 <div class="sf-card">
-                  <div class="sf-swatch" style="background:#f2ece0;color:#a98455">
-                    <svg viewBox="0 0 48 28" fill="currentColor"><path d="M3 21 C3 17.5 6 16.6 10 15.8 L16 14 C19 13 21 11 22 8 C22.5 6.4 24.2 6 25.2 7.2 C27 10 30.5 12 35 13 L41 14.2 C44 14.8 45 16.2 45 18 L45 19.8 L3 21 Z"/><path d="M2.5 24.5 L45.5 24.5 C46.3 23 45.7 21 43.5 21 L4.5 21 C2.6 21 1.8 23 2.5 24.5 Z"/></svg>
-                  </div>
+                  <div class="sf-swatch" data-way="cream"></div>
                   <div class="info"><div class="n">Alameda Slip</div><div class="p">Natural cream · $139</div><div class="add">Add to cart</div></div>
                 </div>
               </div>
@@ -973,6 +965,29 @@
       demoTimers.push(iv);
     }
 
+    // storefront product art: one flat-illustration sneaker, four colorways
+    const SHOE_WAYS = {
+      tan:    { bg: "#e6d3b8", upper: "#c89a6b", cap: "#b0824f", panel: "rgba(60,35,10,.18)", lace: "#f4eee2", stitch: "rgba(60,35,10,.35)", sole: "#d9cfbc", tread: "#c7bba2" },
+      saddle: { bg: "#dcc9ad", upper: "#8a5a3b", cap: "#6f4227", panel: "rgba(30,15,5,.22)",  lace: "#efe6d6", stitch: "rgba(255,240,220,.4)", sole: "#e0d7c4", tread: "#c8bda6" },
+      black:  { bg: "#d9d2c6", upper: "#37312c", cap: "#26211d", panel: "rgba(0,0,0,.3)",     lace: "#c9c2b8", stitch: "rgba(255,255,255,.25)", sole: "#d6cfc2", tread: "#bcb3a2" },
+      cream:  { bg: "#e9ddc4", upper: "#e4d5bc", cap: "#d3bf9e", panel: "rgba(90,60,20,.14)", lace: "#fbf7ee", stitch: "rgba(90,60,20,.3)", sole: "#efe9dc", tread: "#d6cbb6" },
+    };
+    document.querySelectorAll(".sf-swatch[data-way]").forEach(el => {
+      const w = SHOE_WAYS[el.dataset.way];
+      el.style.background = w.bg;
+      el.innerHTML = `<svg viewBox="0 0 240 140">
+        <rect x="10" y="88" width="206" height="22" rx="11" fill="#f8f5ee" stroke="rgba(34,28,23,0.18)" stroke-width="1.5"/>
+        <rect x="13" y="103" width="200" height="11" rx="5.5" fill="${w.sole}"/>
+        <path d="M34 113 L37 105 M58 113 L61 105 M82 113 L85 105 M106 113 L109 105 M130 113 L133 105 M154 113 L157 105 M178 113 L181 105" stroke="${w.tread}" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+        <path d="M22 94 C18 80 24 66 40 60 L90 42 C106 36 120 34 132 38 L168 50 C186 56 200 68 208 82 C210 87 211 92 211 94 L22 94 Z" fill="${w.upper}"/>
+        <path d="M22 94 C18 80 24 66 40 60 L54 55 C60 68 58 82 50 93 L22 94 Z" fill="${w.cap}"/>
+        <path d="M94 44 L136 37 C141 46 143 57 141 67 L116 84 C106 76 98 61 94 48 Z" fill="${w.panel}"/>
+        <path d="M103 49 L110 71 M114 45 L121 67 M125 42 L132 64" stroke="${w.lace}" stroke-width="5.5" fill="none" stroke-linecap="round"/>
+        <path d="M196 66 C203 73 208 82 210 92 L192 93 C190 84 192 74 196 66 Z" fill="${w.cap}"/>
+        <path d="M28 89 C90 86 150 86 204 89" stroke="${w.stitch}" stroke-width="1.6" fill="none" stroke-dasharray="3 4"/>
+      </svg>`;
+    });
+
     const W = [1, 2, 3, 4].map(i => ({
       row: $("mdRow" + i), st: $("mdRow" + i + "St"),
       task: $("mdRow" + i + "Task"), bar: $("mdRow" + i + "Bar"), eta: $("mdRow" + i + "Eta"),
@@ -1222,6 +1237,25 @@
     if (!reduced) {
       let pathKey = "", lastX = null, pending = false, vidDur = 8;
       beeVid.addEventListener("loadedmetadata", () => { vidDur = beeVid.duration || 8; beeUpdate(); });
+      // Chrome quirks: a never-played video may not present seeked frames, and
+      // rapid currentTime writes cancel in-flight seeks. Prime with a muted
+      // play/pause once decodable, and serialize seeks via the seeked event.
+      let seekTarget = null, seekBusy = false;
+      function requestSeek(t) {
+        seekTarget = t;
+        if (seekBusy || beeVid.readyState < 1) return;
+        if (Math.abs((beeVid.currentTime || 0) - t) < 0.03) return;
+        seekBusy = true;
+        try { beeVid.currentTime = t; } catch { seekBusy = false; }
+      }
+      beeVid.addEventListener("seeked", () => {
+        seekBusy = false;
+        if (seekTarget != null && Math.abs(beeVid.currentTime - seekTarget) > 0.03) requestSeek(seekTarget);
+      });
+      beeVid.addEventListener("canplay", () => {
+        const p = beeVid.play();
+        if (p && p.then) p.then(() => { beeVid.pause(); beeUpdate(); }).catch(() => {});
+      }, { once: true });
       function beeUpdate() {
         pending = false;
         if (innerWidth <= 760 || !innerHeight) return; // bee hidden on small screens
@@ -1242,12 +1276,7 @@
         // page -> frozen frame. The first ~2s of footage is the bee flying
         // into frame (mostly a leg) — skip it and scrub the fully-visible
         // hover segment only.
-        if (beeVid.readyState >= 1) {
-          const vt = Math.min(vidDur - 0.05, 2.0 + p * (vidDur - 2.4));
-          if (Math.abs((beeVid.currentTime || 0) - vt) > 0.04) {
-            try { beeVid.currentTime = vt; } catch {}
-          }
-        }
+        requestSeek(Math.min(vidDur - 0.05, 2.0 + p * (vidDur - 2.4)));
       }
       const queueBee = () => { if (!pending) { pending = true; requestAnimationFrame(beeUpdate); } };
       addEventListener("scroll", queueBee, { passive: true });
