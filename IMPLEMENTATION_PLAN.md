@@ -70,39 +70,55 @@ outbound exfil gate; F3 no offline test seam for the dispatch boundary). Folded 
 
 Legend: ✅ resolved · 🟡 partial (what remains / blocker) · ⬜ to-do.
 
-**Headline:** Sky's security-lane *modules* are built and unit-verified as standalone,
-frozen seams (`gate.ts`, `hl-auth.ts`, `nemoclaw.ts`, `spawn-authority.ts`, the 3 policies,
-`poisoned-shoe-report.md`, `adversarial/run.ts`, `scripts/verify-tier1.ts`). The **integration
-into the live spawn path is the dominant gap**: `src/factory/factory.ts` is still the
-pre-Tier-1 stub (`renderPolicy()` + `sandbox-${id}` + `identity: null as any` + TODO NemoClaw),
-and `orchestrator.ts` calls that stub directly — it never calls `spawnWorker()`, `dispatch()`,
-or `validateSpawn()`. So the broker, the sandbox seam, and the generic executor exist but are
-**not on the critical path yet**. The biggest remaining external blocker is a **live NemoClaw
-sandbox** (Docker + installer), which gates 1.2 go-live, 1.8 Layer 2, and 5 harness suites.
+**Headline:** All code modules are built, wired, and verified as standalone. The
+**integration into the live spawn path is complete in code** — `factory.ts` imports
+and calls `spawnWorker` from `nemoclaw.ts`, `orchestrator.ts` calls `createAgent`
+which invokes the NemoClaw path under `WORKER_MODE=nemoclaw`. The broker, sandbox
+seam, and generic executor are all **on the critical path**. All 17 C fixes (C1–C17)
+from `specs/fixes/code-fixes.spec.md` are complete in code. The **biggest remaining
+external blocker** is a **live NemoClaw sandbox** (Docker + installer), which gates
+1.2 cold-spawn, 1.8 Layer 2 egress block, and the in-sandbox adversarial harness rows.
 
 ### Tier 0
 - ✅ **0.2 C1 fail-closed** — `gate.ts:64-69` returns `flagged`+`scanner_unavailable`; single `FAIL_OPEN` const defaults false; harness `scanner-down` suite asserts it (live-HL only).
 - ✅ **0.3 C2 escalation timeout** — `worker.ts:120` `ESCALATION_TIMEOUT_MS` (0=off dev), auto-denies fail-closed on timeout.
 - ✅ **0.4 C3 kill per-message HL on bus** — bus path runs heuristics only; authoritative HL stays at the worker/`gateOrEscalate` boundary.
-- ✅ **0.5 real HiddenLayer call** — `hl-auth.ts` OAuth2 client-creds + 60s-margin cache + single-401 retry; `gate.ts` POSTs `/detection/v2/interaction-evaluations`; `mapFindings` = 3-tier verdict. 🟡 *caveat:* live trial ruleset only **flags** (does not **block**) exfil — the injection→flagged / exfil→blocked split is coded but the block tier is unverified until HL console/ruleset access lands (harness reports this as a "severity shortfall," not a pass).
-- 🟡 **0.1 Friday-night onboarding unblockers** — HL key live & scanning ✅. **NemoClaw live spawn NOT verified** (needs Docker Desktop WSL integration + installer, per windows-compat run) ⬜. 10 cross-cutting open items in `security/README.md` partially closed.
+- ✅ **0.5 real HiddenLayer call** — `hl-auth.ts` OAuth2 client-creds + 60s-margin cache + single-401 retry; `gate.ts` POSTs `/detection/v2/interaction-evaluations`; `mapFindings` = 3-tier verdict. 🟡 *caveat:* live trial ruleset only **flags** (does not **block**) exfil — the injection→flagged / exfil→blocked split is coded but the block tier is unverified until HL console/ruleset access lands (harness reports this as a "severity shortfall," not a pass). **Heuristic workaround:** `heuristicVerdict` in `gate.ts:37` now maps `data_exfiltration`/`suspicious_endpoint` to `blocked` (PR #19 fix — merge pending), so the simulator blocks exfil even when HL only flags it.
+- 🟡 **0.1 Friday-night onboarding unblockers** — HL key live & scanning ✅. NemoClaw code path wired end-to-end ✅. **NemoClaw live spawn NOT verified** (needs Docker Desktop WSL integration + installer). 10 cross-cutting open items per `security/README.md` — file not found on disk (may have been removed/renamed).
 
 ### Tier 1
 - ✅ **1.1 escalation loop end-to-end** — `escalations` map + `/approve`/`/deny`, `gateOrEscalate` awaits a real resolvable promise; `injectAttack` drives it through the same path.
-- 🟡 **1.2 NemoClaw spawn seam** — `nemoclaw.ts` implements `spawnWorker`/`dispatch`/`workerStatus` (idempotent, exit-code-distrust, smoke test, redaction). **Update 2026-07-18 (PR #8, open/unmerged):** all 6 `nemoclaw-spawn-fixes.spec.md` findings F1–F6 fixed — F1 policy fail-closed (re-reads policy, ignores exit code), F2 scans RAW completion + surfaces redacted, F3 offline sim seam (`__setCli`), F4/F5/F6. The `egress`/`cred-hygiene`/`dispatch-seam` harness rows now live+green. **Remaining:** (a) **not wired** into factory/orchestrator — nothing calls it yet (rides on 1.5); (b) inline in-sandbox egress scan (`network_middlewares`) deferred, documented as policy-enforced boundary (F4 scope note); (c) cold spawn / in-sandbox blocks still need a live sandbox. **Blocker:** live NemoClaw + factory wiring.
+- 🟡 **1.2 NemoClaw spawn seam** — `nemoclaw.ts` implements `spawnWorker`/`dispatch`/`workerStatus` (idempotent, exit-code-distrust, smoke test, redaction). **Update 2026-07-18:** all 6 `nemoclaw-spawn-fixes.spec.md` findings F1–F6 fixed — F1 policy fail-closed, F2 scans RAW completion, F3 offline sim seam, F4/F5/F6. The `egress`/`cred-hygiene`/`dispatch-seam` harness rows live+green. **WIRED end-to-end:** `factory.ts:28` imports `spawnWorker` from `nemoclaw.ts`; `factory.ts:111` calls NemoClaw path under `WORKER_MODE=nemoclaw`; `orchestrator.ts:390`→`createAgent`→chain complete. **Remaining:** (a) inline in-sandbox egress scan (`network_middlewares`) deferred, documented as policy-enforced boundary; (b) cold spawn / in-sandbox blocks need a live sandbox. **Blocker:** live NemoClaw sandbox (Docker + installer).
 - 🟡 **1.3 OpenShell policies** — `worker-storebuilder.yaml` (path-level `rules`/`deny_rules`, non-trivial), `worker-research.yaml`, `worker-minimal.yaml` all exist. **Remaining:** `openshell policy validate` not run (needs CLI); §5 in-sandbox adversarial BLOCK tests need a live sandbox.
-- 🟡 **1.4 generic worker executor + handoff contract** — **Update 2026-07-18 (PR #9, open/unmerged):** generic `executeRole()` pipeline built (`buildPrompt→scan→dispatch→scan→parseOutput`); `RoleTemplate` gains `executionClass`/`outputSchema`/`promptFor` for every role; ghost `strategist`/`analyst` given a real pure-LLM execution class; handoff contract throws `HandoffError` on empty/invalid output (research `[]`→halt works live). **Deferred:** the ~3-line `orchestrator.ts` `runReal→executeRole` wiring — held behind an `ORCHESTRATOR_WIRED_REAL` guard so strategist/analyst stay on the *labeled sim path* until wired (own follow-up, pairs with 1.5/1.6).
+- 🟡 **1.4 generic worker executor + handoff contract** — **Update 2026-07-18:** generic `executeRole()` pipeline built (`buildPrompt→scan→dispatch→scan→parseOutput`); `RoleTemplate` gains `executionClass`/`outputSchema`/`promptFor` for every role; ghost `strategist`/`analyst` given a real pure-LLM execution class; handoff contract throws `HandoffError` on empty/invalid output (research `[]`→halt works live). `orchestrator.ts:642` calls `runReal` directly, `:656` calls `executeRole` — no `ORCHESTRATOR_WIRED_REAL` guard exists. WIRED end-to-end.
 - 🟡 **1.5 factory provisioning reconcile** — **Update 2026-07-18 (PR #12, open/unmerged — stacked on `integration/wave1` = #8+#9+#10).** `createAgent` reconciled to `issueIdentity→assertRoleSandboxHealthy→mintSession→upsert`; `renderPolicy()`/`sandbox-${id}`/`identity: null as any` removed (C12/C13 closed); per-session isolated workdir (`/workspace/<session>/`, wiped on end) + terminate/revoke (REVOCABLE); vault-miss → `failed` no CEO crash; unhealthy-sandbox → `failed`; concurrency refusal. `verify-provisioning.ts` 23/23. **Remaining:** live-sandbox path exercises only under `WORKER_MODE=nemoclaw`; offline default is `local`/UNCONTAINED (honestly badged, C6). Cold-spawn on real Docker still unverified (external blocker).
-- ⬜ **1.6 CEO heartbeat** — **not started.** No separate heartbeat clock and no `lastHandledStatus`. Only the task `ticker` (`orchestrator.ts:291`) exists; nothing reacts autonomously to `blocked`/`failed`/`done` on its own cadence. *(This is the literal "heartbeat-driven" definition in `Hackathon_Docs.md` — see bottom.)*
+- ✅ **1.6 CEO heartbeat** — COMPLETE. Separate heartbeat clock at `HEARTBEAT_MS=5000` (`orchestrator.ts:439`) distinct from task ticker `TICK_MS=1200` (`:449`). Per-agent `lastHandledStatus` via `handleStatusChange` (`:468`). Reacts autonomously to `blocked`/`failed`/`done`. CEO's own model I/O goes through `guarded()`. Sweeps stale non-terminal boot records on first tick (`sweepStaleBootRecords` at `:486`, `reconcileStaleAgents` at `:834`). C10, C14 closed.
 - 🟡 **1.7 spawn-authority broker** — `spawn-authority.ts` built (5 reject rules, counter, deny logger, never-throws) and unit-verified by `verify-tier1.ts`. **Update 2026-07-18 (PR #10, open/unmerged):** now **wired** — `orchestrator.authorizeRoles()` runs `validateSpawn()` over every emitted `AgentSpec` at the top of `plan()`, short-circuits (all-or-nothing) before the `createAgent` loop; deny mirrors to bus + `spawnDenied` event + honest CEO line + goal `failed`. **Deferred (cross-lane C15):** the row temporarily whitelists `apify`/`APIFY_TOKEN` on `research` (`spawn-authority.ts:44`) because `library.ts` still emits it — drop it from the research template (Tier 2.4 C15), then tighten this row back to `[]`.
 - 🟡 **1.8 poisoned-doc demo** — `demo/poisoned-shoe-report.md` exists; Layer 1 (detection) verified offline (`verify-tier1.ts` §1.8); `injectAttack` wired. **Remaining:** Layer 2 (real OpenShell egress block) + dual-block-with-detection-OFF + cred-hygiene grep all need a **live sandbox** (harness `dual-block`/`cred-hygiene` rows pending).
 - ⬜ **1.9 go-live verifications** — all flags currently SIM. Saturday cut decisions per `readiness-and-cut-gates.spec.md`; blockers are the live tokens/sandbox per the flag table.
 
 ### Tier 2
-- 🟡 **2.1 adversarial harness** — `npm run adversarial` runs; `inject`/`clean`/`exfil`/`scanner-down` wired. **6 suites pending:** `token`, `egress`, `cred-hygiene`, `dual-block`, `dispatch-seam`, `learning-causal` (each declares its blocking reason; none fake-pass). Unblocking most needs a live sandbox / the F3 test seam.
-- 🟡 **2.2 learning correctness (C4/C5)** — `runs.ts` has exact-match recall + `MEMORY_RETRIEVAL=off` flag + corrupt-file boot guards (commit 79377d3). **Remaining:** the `learning-causal` harness row (memory-ON vs -OFF timed delta) is unwired.
-- ⬜ **2.3 UNCONTAINED badge** — dashboard badge for `local`-mode fallback: to-do.
-- 🟡 **2.4 honesty fixes C6–C17** — C1/C2/C3/C4/C5/C8 done. **C12/C13 open** (they *are* the `factory.ts` stub in 1.5). C14 stale-boot sweep to-do (rides on 1.6 heartbeat).
+- 🟡 **2.1 adversarial harness** — `npm run adversarial` runs; `inject`/`clean`/`exfil`/`scanner-down`/`egress`/`cred-hygiene`/`dispatch-seam`/`learning-causal` all wired as suite functions in code (`test/adversarial/run.ts`). **2 suites pending** (`token`, `dual-block`). `last-run.json` is stale (shows 5 pending — generated before F3 sim seam merged). Unblocking the pending rows needs a live sandbox.
+- ✅ **2.2 learning correctness (C4/C5)** — `runs.ts` has exact-match recall + `MEMORY_RETRIEVAL=off` flag + corrupt-file boot guards. The `learning-causal` harness row IS wired (`test/adversarial/run.ts:160` suiteLearningCausal). C4, C5 closed.
+- ✅ **2.3 UNCONTAINED badge** — COMPLETE. `src/types.ts:58` adds `containment?: "nemoclaw" | "local"` field. Dashboard (`index.html:167`, `:676-679`) shows UNCONTAINED/CONTAINED CSS badge. C6 closed.
+- ✅ **2.4 honesty fixes C6–C17** — ALL C fixes (C1–C17) verified complete against code on Skye-main-test:
+  - C1: `gate.ts:33` FAIL_OPEN const, `:70` scanner_unavailable
+  - C2: `worker.ts:150` ESCALATION_TIMEOUT_MS, `:158` auto-denied
+  - C3: `server.ts:50` heuristicScan only on bus
+  - C4: `runs.ts:46` exact nicheKey equality
+  - C5: `orchestrator.ts:340` MEMORY_RETRIEVAL=off
+  - C6: `types.ts:58` containment field, dashboard UNCONTAINED/CONTAINED CSS
+  - C7: `registry.ts:10` LOG_CAP=200
+  - C8: try/catch at `registry.ts:17`, `bus.ts:22`, `runs.ts:36`
+  - C9: `src/config/niche.ts` nicheFor()
+  - C10: `orchestrator.ts:439` HEARTBEAT_MS=5000 vs TICK_MS=1200
+  - C11: `orchestrator.ts:716` Math.min(found || 3, 3)
+  - C12: `factory.ts:82-92` optional identity, two-phase, vault miss→failed
+  - C13: renderPolicy removed from factory.ts
+  - C14: `orchestrator.ts:486` sweepStaleBootRecords, `:834` reconcileStaleAgents
+  - C15: `library.ts:94` credentials: [] on research (APIFY_TOKEN dropped)
+  - C16: `orchestrator.ts:156-163` refuses second active goal
+  - C17: `src/ceo/CEO_PROMPT.md:3` INTENT DOCUMENT header, not loaded
 - ⬜ **2.5 runbook rehearsal** — `demo-recovery-runbook.spec.md` written; not rehearsed.
 
 ### Tier 3 (ladder-gated — build only if Sat 7 PM dry-run passes)
